@@ -1,0 +1,9 @@
+[Core]
+Name = BSISB Map File Format
+Module = mapfile.py
+
+[Documentation]
+Author = Liang Chen
+Version = 0.1
+Website = 
+Description = 
