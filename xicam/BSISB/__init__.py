@@ -5,7 +5,8 @@ from qtpy import uic
 import pyqtgraph as pg
 from xicam.core.data import NonDBHeader
 from xicam.gui.widgets.dynimageview import DynImageView
-from .widgets.mapviewwidget import MapViewWidget
+from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
+from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 
 from xicam.core import msg
 from xicam.plugins import GUIPlugin, GUILayout
@@ -15,7 +16,9 @@ class BSISB(GUIPlugin):
 
     def __init__(self, *args, **kwargs):
         self.imageview = MapViewWidget()
-        self.spectra = pg.PlotWidget()
+        self.spectra = SpectraPlotWidget()
+
+        self.stage2imageview = MapViewWidget()
 
         self.lefttoolbar = QToolBar()
         self.lefttoolbar.setOrientation(Qt.Vertical)
@@ -29,10 +32,15 @@ class BSISB(GUIPlugin):
         self.centerlayout.addWidget(self.lefttoolbar)
         self.centerlayout.addWidget(self.imageview)
 
-        self.stages = {"BSISB": GUILayout(self.centerwidget, bottom=self.spectra),}
+        # Connect signals
+        self.imageview.sigShowSpectra.connect(self.spectra.showSpectra)
+
+        self.stages = {"BSISB": GUILayout(self.centerwidget, bottom=self.spectra),
+                       "Stage 2": GUILayout(self.stage2imageview)}
         super(BSISB, self).__init__(*args, **kwargs)
 
     def appendHeader(self, header: NonDBHeader, **kwargs):
         self.imageview.setHeader(header, field= '')
+        self.spectra.setHeader(header, field='')
 
-
+        self.stage2imageview.setHeader(header, field='')

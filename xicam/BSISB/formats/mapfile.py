@@ -18,4 +18,5 @@ class MapFilePlugin(DataHandlerPlugin):
         super(MapFilePlugin, self).__init__()
         self.path = path
 
-
+    def parseDataFile(self, *args, **kwargs):
+        return dict()
