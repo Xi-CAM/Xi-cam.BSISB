@@ -30,7 +30,7 @@ setup(
       'Programming Language :: Python :: 3',
     ],
     keywords='',
-    packages=find_packages(exclude=['docs', 'tests*']),
+    packages=['xicam.BSISB', 'xicam.BSISB.formats', 'xicam.BSISB.widgets'],
     include_package_data=True,
     author='Liang Chen',
     install_requires=install_requires,
