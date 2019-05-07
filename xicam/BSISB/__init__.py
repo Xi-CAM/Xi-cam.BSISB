@@ -18,7 +18,7 @@ class BSISB(GUIPlugin):
         self.imageview = MapViewWidget()
         self.spectra = SpectraPlotWidget()
 
-        self.stage2imageview = MapViewWidget()
+        self.stage2spectra = SpectraPlotWidget()
 
         self.lefttoolbar = QToolBar()
         self.lefttoolbar.setOrientation(Qt.Vertical)
@@ -43,4 +43,4 @@ class BSISB(GUIPlugin):
         self.imageview.setHeader(header, field= 'image')
         self.spectra.setHeader(header, field='')
 
-        self.stage2imageview.setHeader(header, field='')
+        self.stage2spectra.setHeader(header, field='spectra')

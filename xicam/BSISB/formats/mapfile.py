@@ -2,6 +2,7 @@ from xicam.plugins.DataHandlerPlugin import DataHandlerPlugin, start_doc, descri
 import functools
 from lbl_ir.io_tools.read_map import read_all_formats
 import uuid
+import h5py
 
 
 class MapFilePlugin(DataHandlerPlugin):
@@ -13,17 +14,17 @@ class MapFilePlugin(DataHandlerPlugin):
 
     def __call__(self, *args, E=None, i=None):
         if not E and not i:
-            ...
             # return volume
-
+            return self.h5[self.root_name + 'data/image/image_cube']
+        
         elif not E and i:
-            ...
             # return spectra
-
+            return self.h5[self.root_name + 'data/spectra'][i,:]
+        
         elif E and not i:
-            return self.h5['data/image/imagecube'][:,:,E]
             # return image
-
+            return self.h5[self.root_name + 'data/image/image_cube'][:,:,E]
+        
         else:
             raise ValueError(f'Handler could not extract data given kwargs: { dict(E=E, i=i) }')
 
@@ -34,6 +35,8 @@ class MapFilePlugin(DataHandlerPlugin):
         super(MapFilePlugin, self).__init__()
         self.path = path
         self.h5 = h5py.File(self.path, 'r')
+        with self.h5 as f:
+            self.root_name = list(f.keys())[0] + '/'
 
     def parseDataFile(self, *args, **kwargs):
         return dict()
@@ -61,7 +64,10 @@ class MapFilePlugin(DataHandlerPlugin):
         # get imagecube shape
         # iterate over E dimension
         with h5py.File(path, 'r') as f:
-            n = f['data/image/imagecube'].shape[2]
+            root_name = list(f.keys())[0] + '/'
+            # get number of frames
+            n = f[root_name + 'data/image/image_cube'].shape[2]
+            
         for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), {'E': i}, {'spectra_index': 0})
 
@@ -72,7 +78,16 @@ class MapFilePlugin(DataHandlerPlugin):
 
     @classmethod
     def getSpectraEvents(cls, path, descriptor_uid):
-        for i in range(...):
+        # get a h5 object
+        # find the spectra data
+        # get spectra index
+        # iterate over rows
+        with h5py.File(path, 'r') as f:
+            root_name = list(f.keys())[0] + '/'
+            # get number of rows
+            n = f[root_name + 'data/spectra'].shape[0]
+            
+        for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), {'i': i}, {'image_index': (0, 0)})
 
     @classmethod
