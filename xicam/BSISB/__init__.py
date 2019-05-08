@@ -41,6 +41,6 @@ class BSISB(GUIPlugin):
 
     def appendHeader(self, header: NonDBHeader, **kwargs):
         self.imageview.setHeader(header, field= 'image')
-        self.spectra.setHeader(header, field='')
+        self.spectra.setHeader(header, field='spectra')
 
         self.stage2spectra.setHeader(header, field='spectra')
