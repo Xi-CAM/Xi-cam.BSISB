@@ -1,0 +1,10 @@
+MANIFEST.in
+README.md
+requirements.txt
+setup.cfg
+setup.py
+xicam.BSISB.egg-info/PKG-INFO
+xicam.BSISB.egg-info/SOURCES.txt
+xicam.BSISB.egg-info/dependency_links.txt
+xicam.BSISB.egg-info/requires.txt
+xicam.BSISB.egg-info/top_level.txt

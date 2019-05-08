@@ -18,7 +18,7 @@ class BSISB(GUIPlugin):
         self.imageview = MapViewWidget()
         self.spectra = SpectraPlotWidget()
 
-        self.stage2imageview = MapViewWidget()
+        self.stage2spectra = SpectraPlotWidget()
 
         self.lefttoolbar = QToolBar()
         self.lefttoolbar.setOrientation(Qt.Vertical)
@@ -36,11 +36,11 @@ class BSISB(GUIPlugin):
         self.imageview.sigShowSpectra.connect(self.spectra.showSpectra)
 
         self.stages = {"BSISB": GUILayout(self.centerwidget, bottom=self.spectra),
-                       "Stage 2": GUILayout(self.stage2imageview)}
+                       "NMF": GUILayout(self.stage2spectra)}
         super(BSISB, self).__init__(*args, **kwargs)
 
     def appendHeader(self, header: NonDBHeader, **kwargs):
-        self.imageview.setHeader(header, field= '')
+        self.imageview.setHeader(header, field= 'image')
         self.spectra.setHeader(header, field='')
 
-        self.stage2imageview.setHeader(header, field='')
+        self.stage2spectra.setHeader(header, field='spectra')
