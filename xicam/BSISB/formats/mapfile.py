@@ -13,15 +13,15 @@ class MapFilePlugin(DataHandlerPlugin):
     descriptor_keys = ['object_keys']
 
     def __call__(self, *args, E=None, i=None):
-        if not E and not i:
+        if E is None and i is None:
             # return volume
             return self.h5[self.root_name + 'data/image/image_cube']
-        
-        elif not E and i:
+
+        elif E is None and i is not None:
             # return spectra
             return self.h5[self.root_name + 'data/spectra'][i,:]
-        
-        elif E and not i:
+
+        elif E is not None and i is None:
             # return image
             return self.h5[self.root_name + 'data/image/image_cube'][:,:,E]
         
@@ -35,8 +35,7 @@ class MapFilePlugin(DataHandlerPlugin):
         super(MapFilePlugin, self).__init__()
         self.path = path
         self.h5 = h5py.File(self.path, 'r')
-        with self.h5 as f:
-            self.root_name = list(f.keys())[0] + '/'
+        self.root_name = list(self.h5.keys())[0] + '/'
 
     def parseDataFile(self, *args, **kwargs):
         return dict()
@@ -46,7 +45,7 @@ class MapFilePlugin(DataHandlerPlugin):
     @classmethod
     def getVolumeDescriptor(cls, path, start_uid):
         uid = uuid.uuid4()
-        yield descriptor_doc(start_uid, uid, {})
+        return descriptor_doc(start_uid, uid, {})
 
     @classmethod
     def getVolumeEvents(cls, path, descriptor_uid):
@@ -55,7 +54,7 @@ class MapFilePlugin(DataHandlerPlugin):
     @classmethod
     def getImageDescriptor(cls, path, start_uid):
         uid = uuid.uuid4()
-        yield descriptor_doc(start_uid, uid, {})
+        return descriptor_doc(start_uid, uid, {})
 
     @classmethod
     def getImageEvents(cls, path, descriptor_uid):
@@ -74,7 +73,7 @@ class MapFilePlugin(DataHandlerPlugin):
     @classmethod
     def getSpectraDescriptor(cls, path, start_uid):
         uid = uuid.uuid4()
-        yield descriptor_doc(start_uid, uid, {})
+        return descriptor_doc(start_uid, uid, {})
 
     @classmethod
     def getSpectraEvents(cls, path, descriptor_uid):
