@@ -8,3 +8,9 @@ xicam.BSISB.egg-info/SOURCES.txt
 xicam.BSISB.egg-info/dependency_links.txt
 xicam.BSISB.egg-info/requires.txt
 xicam.BSISB.egg-info/top_level.txt
+xicam/BSISB/__init__.py
+xicam/BSISB/formats/__init__.py
+xicam/BSISB/formats/mapfile.py
+xicam/BSISB/widgets/__init__.py
+xicam/BSISB/widgets/mapviewwidget.py
+xicam/BSISB/widgets/spectraplotwidget.py
