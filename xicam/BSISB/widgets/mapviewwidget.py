@@ -24,7 +24,7 @@ class MapViewWidget(DynImageView):
         # make lazy array from document
         data = None
         try:
-            data = np.array(header.meta_array(field)).squeeze().T
+            data = header.meta_array(field)
         except IndexError:
             msg.logMessage('Header object contained no frames with field ''{field}''.', msg.ERROR)
 
