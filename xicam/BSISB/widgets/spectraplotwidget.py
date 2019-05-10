@@ -8,10 +8,19 @@ class SpectraPlotWidget(PlotWidget):
     def __init__(self, *args, **kwargs):
         super(SpectraPlotWidget, self).__init__(*args, **kwargs)
         self._data = None
+        self.positionmap = dict()
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):
         self.header = header
         self.field = field
+
+        # get position map
+        self.positionmap = dict()
+        for spectraevent in header.events(fields=['spectra']):
+            index = spectraevent['i']
+            position = spectraevent['image_index']
+            self.positionmap[position] = index
+
         # make lazy array from document
         data = None
         try:
@@ -26,4 +35,4 @@ class SpectraPlotWidget(PlotWidget):
     def showSpectra(self, x, y):
         if self._data is not None:
             self.clear()
-            self.plot(self._data[:, x, y])
+            self.plot(self._data[self.positionmap[(x, y)]])

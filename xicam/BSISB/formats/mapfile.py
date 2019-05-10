@@ -3,12 +3,14 @@ import functools
 from lbl_ir.io_tools.read_map import read_all_formats
 import uuid
 import h5py
+from functools import lru_cache
 
+import time
 
 class MapFilePlugin(DataHandlerPlugin):
     name = 'BSISB Map File'
 
-    DEFAULT_EXTENTIONS = ['.map']
+    DEFAULT_EXTENTIONS = ['.h5']
 
     descriptor_keys = ['object_keys']
 
@@ -31,6 +33,7 @@ class MapFilePlugin(DataHandlerPlugin):
         # data, fmt = read_all_formats(self.path)
         # return data.imageCube
 
+    @lru_cache(maxsize=1)
     def __init__(self, path):
         super(MapFilePlugin, self).__init__()
         self.path = path
@@ -87,7 +90,7 @@ class MapFilePlugin(DataHandlerPlugin):
             n = f[root_name + 'data/spectra'].shape[0]
             
         for i in range(n):
-            yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), {'i': i}, {'image_index': (0, 0)})
+            yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), resource_kwargs={'i': i}, metadata={'image_index': (0, 0),'i':i})
 
     @classmethod
     def ingest(cls, paths):
