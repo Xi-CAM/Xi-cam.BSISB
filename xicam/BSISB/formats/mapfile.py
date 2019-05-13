@@ -17,7 +17,7 @@ class MapFilePlugin(DataHandlerPlugin):
     def __call__(self, *args, E=None, i=None):
         if E is None and i is None:
             # return volume
-            return self.h5[self.root_name + 'data/image/image_cube']
+            return self.h5[self.root_name + 'data/image/image_cube'][:,:,:]
 
         elif E is None and i is not None:
             # return spectra
@@ -88,9 +88,11 @@ class MapFilePlugin(DataHandlerPlugin):
             root_name = list(f.keys())[0] + '/'
             # get number of rows
             n = f[root_name + 'data/spectra'].shape[0]
+            wavenumbers = f[root_name + 'data/wavenumbers'][:]
             
         for i in range(n):
-            yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), resource_kwargs={'i': i}, metadata={'image_index': (0, 0),'i':i})
+            yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), resource_kwargs={'i': i},
+                                           metadata={'wavenumbers':wavenumbers, 'image_index': (0, 0),'i':i})
 
     @classmethod
     def ingest(cls, paths):
