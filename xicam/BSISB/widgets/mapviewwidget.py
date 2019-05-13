@@ -16,8 +16,8 @@ class MapViewWidget(DynImageView):
                 pos):  # Note, when axes are added, you must get the view with self.view.getViewBox()
             mousePoint = self.view.mapSceneToView(pos)
             x, y = int(mousePoint.x()), int(mousePoint.y())
-            idx = x + y * self.n_col
-            self.sigShowSpectra.emit(idx)
+            ind = x + y * self.n_col
+            self.sigShowSpectra.emit(ind)
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):
         self.header = header
