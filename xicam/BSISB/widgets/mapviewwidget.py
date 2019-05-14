@@ -9,15 +9,19 @@ class MapViewWidget(DynImageView):
 
     def __init__(self, *args, **kwargs):
         super(MapViewWidget, self).__init__(*args, **kwargs)
-        self.scene.sigMouseMoved.connect(self.showSpectra)
+        # self.scene.sigMouseMoved.connect(self.showSpectra)
+        self.scene.sigMouseClicked.connect(self.showSpectra)
 
-    def showSpectra(self, pos):
-        if self.view.sceneBoundingRect().contains(
-                pos):  # Note, when axes are added, you must get the view with self.view.getViewBox()
+    def showSpectra(self, event):
+
+        pos = event.pos()
+        if self.view.sceneBoundingRect().contains(pos):  # Note, when axes are added, you must get the view with self.view.getViewBox()
             mousePoint = self.view.mapSceneToView(pos)
             x, y = int(mousePoint.x()), int(mousePoint.y())
             ind = x + y * self.n_col
+            # print(x, y, ind)
             self.sigShowSpectra.emit(ind)
+
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):
         self.header = header
@@ -34,8 +38,4 @@ class MapViewWidget(DynImageView):
         if data is not None:
             # kwargs['transform'] = QTransform(1, 0, 0, -1, 0, data.shape[-2])
             self.setImage(img=data, *args, **kwargs)
-            # test
-            # data2 = np.zeros((17,32))
-            # data2[3,31] = 0.05
-            # data2[13, 0] = 1
-            # self.setImage(img=data2, *args, **kwargs)
+
