@@ -19,6 +19,7 @@ class SpectraPlotWidget(PlotWidget):
         spectraEvent = next(header.events(fields=['spectra']))
         self.wavenumbers = spectraEvent['wavenumbers']
 
+
         # get position map
         # self.positionmap = dict()
         # for spectraevent in header.events(fields=['spectra']):

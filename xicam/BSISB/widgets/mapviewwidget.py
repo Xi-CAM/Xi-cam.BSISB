@@ -18,14 +18,17 @@ class MapViewWidget(DynImageView):
         if self.view.sceneBoundingRect().contains(pos):  # Note, when axes are added, you must get the view with self.view.getViewBox()
             mousePoint = self.view.mapSceneToView(pos)
             x, y = int(mousePoint.x()), int(mousePoint.y())
-            ind = x + y * self.n_col
-            # print(x, y, ind)
+            ind = self.rc2ind[(y,x)]
+            print(x, y, ind, x + y * self.n_col)
             self.sigShowSpectra.emit(ind)
 
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):
         self.header = header
         self.field = field
+
+        imageEvent = next(header.events(fields=['image']))
+        self.rc2ind = imageEvent['rc_index']
         # make lazy array from document
         data = None
         try:
