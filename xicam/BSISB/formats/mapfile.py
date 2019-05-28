@@ -69,11 +69,12 @@ class MapFilePlugin(DataHandlerPlugin):
             root_name = list(f.keys())[0] + '/'
             # get number of frames
             n = f[root_name + 'data/image/image_cube'].shape[2]
+            wavenumbers = f[root_name + 'data/wavenumbers'][:]
             ind_rc_map = f[root_name + '/data/image/ind_rc_map'][:, :]
             rc2ind = {tuple(x[1:]): x[0] for x in ind_rc_map}
             
         for i in range(n):
-            yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), {'E': i}, {'rc_index': rc2ind})
+            yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), {'E': i}, {'wavenumbers': wavenumbers, 'rc_index': rc2ind})
 
     @classmethod
     def getSpectraDescriptor(cls, path, start_uid):
