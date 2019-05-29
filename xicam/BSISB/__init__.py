@@ -38,7 +38,7 @@ class BSISB(GUIPlugin):
         self.spectra.sigEnergyChanged.connect(self.imageview.setEnergy)
 
         self.stages = {"BSISB": GUILayout(self.centerwidget, bottom=self.spectra),
-                       "NMF": GUILayout(self.factorizationwidget)}
+                       "PCA": GUILayout(self.factorizationwidget)}
         super(BSISB, self).__init__(*args, **kwargs)
 
     def appendHeader(self, header: NonDBHeader, **kwargs):

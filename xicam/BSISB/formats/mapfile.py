@@ -94,10 +94,12 @@ class MapFilePlugin(DataHandlerPlugin):
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
             ind_rc_map = f[root_name + '/data/image/ind_rc_map'][:,:]
             ind2rc = {x[0]: tuple(x[1:]) for x in ind_rc_map}
+            mask = f[root_name + '/data/image/image_mask'][:, :]
+            imgShape = (mask.shape[0], mask.shape[1])
 
         for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), resource_kwargs={'i': i},
-                                           metadata={'wavenumbers':wavenumbers, 'index_rc': ind2rc[i], 'i':i})
+                                           metadata={'wavenumbers':wavenumbers, 'index_rc': ind2rc[i], 'imgShape':imgShape, 'i':i})
 
     @classmethod
     def ingest(cls, paths):
