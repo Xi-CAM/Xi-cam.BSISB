@@ -11,25 +11,29 @@ from xicam.core import msg
 from xicam.plugins import GUIPlugin, GUILayout
 from xicam.gui.widgets.tabview import TabView
 
-class MapView(QWidget):
+class MapView(QSplitter):
     def __init__(self, header: NonDBHeader = None, field: str = 'primary', ):
         super(MapView, self).__init__()
+        #layout set up
+        self.setOrientation(Qt.Vertical)
         self.imageview = MapViewWidget()
         self.spectra = SpectraPlotWidget()
         self.setLayout(QVBoxLayout())
-        self.imageview_and_toolbar = QWidget()
-        self.centerlayout = QHBoxLayout()
-        self.imageview_and_toolbar.setLayout(self.centerlayout)
-        self.lefttoolbar = QToolBar()
-        self.lefttoolbar.setOrientation(Qt.Vertical)
-        self.zoombutton = QToolButton()
-        self.zoombutton.setText('Zoom In')
-        self.lefttoolbar.addWidget(self.zoombutton)
-        self.centerlayout.addWidget(self.lefttoolbar)
-        self.centerlayout.addWidget(self.imageview)
-        self.layout().addWidget(self.imageview_and_toolbar)
+        self.layout().addWidget(self.imageview)
         self.layout().addWidget(self.spectra)
+        # self.imageview_and_toolbar = QWidget()
+        # self.centerlayout = QHBoxLayout()
+        # self.imageview_and_toolbar.setLayout(self.centerlayout)
+        # self.lefttoolbar = QToolBar()
+        # self.lefttoolbar.setOrientation(Qt.Vertical)
+        # self.zoombutton = QToolButton()
+        # self.zoombutton.setText('Zoom In')
+        # self.lefttoolbar.addWidget(self.zoombutton)
+        # self.centerlayout.addWidget(self.lefttoolbar)
+        # self.centerlayout.addWidget(self.imageview)
+        # self.layout().addWidget(self.imageview_and_toolbar)
 
+        #readin header
         self.imageview.setHeader(header,field='image')
         self.spectra.setHeader(header,field='spectra')
         self.header = header
