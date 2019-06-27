@@ -15,16 +15,12 @@ class MapFilePlugin(DataHandlerPlugin):
     descriptor_keys = ['object_keys']
 
     def __call__(self, *args, E=None, i=None):
-        if E is None and i is None:
-            # return volume
-            return self.h5[self.root_name + 'data/image/image_cube'][:, :, :]
-
-        elif E is None and i is not None:
+        if E is None and i is not None:
             # return spectra
             return self.h5[self.root_name + 'data/spectra'][i,:]
 
         elif E is not None and i is None:
-            # return image
+            # return image or volume
             return self.h5[self.root_name + 'data/image/image_cube'][:,:,E]
         
         else:
@@ -54,12 +50,14 @@ class MapFilePlugin(DataHandlerPlugin):
     def getVolumeEvents(cls, path, descriptor_uid):
         with h5py.File(path, 'r') as f:
             root_name = list(f.keys())[0] + '/'
+            n = f[root_name + 'data/image/image_cube'].shape[2]
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
             imgMask = f[root_name + 'data/image/image_mask'][:, :]
-            imgGrid = f[root_name + 'data/image/image_grid_param'][:]
+            imgShape = (imgMask.shape[0], imgMask.shape[1])
 
-        yield embedded_local_event_doc(descriptor_uid, 'volume', cls, (path,),
-                                       metadata = {'wavenumbers': wavenumbers, 'imgMask':imgMask, 'imgGrid':imgGrid})
+        for i in range(n):
+            yield embedded_local_event_doc(descriptor_uid, 'volume', cls, (path,), resource_kwargs={'E': i},
+                                       metadata = {'path': path, 'wavenumbers': wavenumbers, 'imgShape': imgShape})
 
     @classmethod
     def getImageDescriptor(cls, path, start_uid):
@@ -79,11 +77,12 @@ class MapFilePlugin(DataHandlerPlugin):
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
             ind_rc_map = f[root_name + 'data/image/ind_rc_map'][:, :]
             rc2ind = {tuple(x[1:]): x[0] for x in ind_rc_map}
-            mask = f[root_name + 'data/image/image_mask'][:, :]
-            imgShape = (mask.shape[0], mask.shape[1])
+            imgMask = f[root_name + 'data/image/image_mask'][:, :]
+            imgShape = (imgMask.shape[0], imgMask.shape[1])
             
         for i in range(n):
-            yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), {'E': i}, {'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'imgShape':imgShape})
+            yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), resource_kwargs={'E': i},
+                                           metadata={'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'imgShape': imgShape})
 
     @classmethod
     def getSpectraDescriptor(cls, path, start_uid):

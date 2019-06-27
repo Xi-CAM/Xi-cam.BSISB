@@ -52,6 +52,7 @@ class BSISB(GUIPlugin):
         self.NMF_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
 
         self.headermodel.rowsRemoved.connect(partial(self.PCA_widget.setHeader,'spectra'))
+        self.headermodel.rowsRemoved.connect(partial(self.NMF_widget.setHeader,'volume'))
 
         # Setup tabviews
         self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')

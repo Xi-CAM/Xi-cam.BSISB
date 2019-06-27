@@ -8,14 +8,14 @@ from functools import partial
 from qtpy.QtCore import Signal
 from sklearn.decomposition import PCA, NMF
 from sklearn.preprocessing import StandardScaler
+from umap import UMAP
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from lbl_ir.tasks.preprocessing import data_prep, transform
-from lbl_ir.tasks.NMF.multi_set_analyses import single_set_NMF
-from lbl_ir.data_objects.ir_map import ir_map, sample_info
-from umap import UMAP
+from lbl_ir.tasks.preprocessing import data_prep
+from lbl_ir.tasks.NMF.multi_set_analyses import aggregate_data, single_set_NMF
+from lbl_ir.io_tools import read_map
 
 from pyqtgraph.parametertree import ParameterTree, Parameter
 
@@ -67,29 +67,27 @@ class FactorizationParameters(ParameterTree):
 
         self.field = field
         self.wavenumbers = wavenumbers
+        self.N_w = len(self.wavenumbers)
         self.imgShapes = imgShapes
         self._dataSets = []
 
-        # check if all wavenumbers are equal
-        for header in self.headers:
-            data = None
-            try:
-                data = header.meta_array(self.field)
-            except IndexError:
-                msg.logMessage('Header object contained no frames with field ''{field}''.', msg.ERROR)
+        if field == 'spectra':  # PCA workflow
+            for header in self.headers:
+                data = None
+                try:
+                    data = header.meta_array(self.field)
+                except IndexError:
+                    msg.logMessage('Header object contained no frames with field ''{field}''.', msg.ERROR)
 
-            if data is not None:
-                # kwargs['transform'] = QTransform(1, 0, 0, -1, 0, data.shape[-2])
-                self._dataSets.append(data)
-
-        self.N_w = len(self.wavenumbers)
-
-        # elif field == 'volume':  # NMF workflow
-        #     volumeEvent = next(header.events(fields=['volume']))
-        #     self.wavenumbers = volumeEvent['wavenumbers']
-        #     self.imgMask = volumeEvent['imgMask']
-        #     self.imgShape = (self.imgMask.shape[0], self.imgMask.shape[1])
-        #     self.imgGrid = volumeEvent['imgGrid']
+                if data is not None:
+                    # kwargs['transform'] = QTransform(1, 0, 0, -1, 0, data.shape[-2])
+                    self._dataSets.append(data)
+        elif field == 'volume':  # NMF workflow
+            for header in self.headers:
+                volumeEvent = next(header.events(fields=['volume']))
+                # readin  filepath
+                path = volumeEvent['path']
+                self._dataSets.append(path)
 
     def setNumComponents(self):
         N = self.parameter['Number of Components']
@@ -104,9 +102,10 @@ class FactorizationParameters(ParameterTree):
 
         if hasattr(self, '_dataSets'):
             print('Start computing factorization ...')
+            self.dataRowSplit = [0]  # remember the starting/end row positions of each dataset
             if self.field == 'spectra':  # PCA workflow
+                print(self.imgShapes)
                 self._allData = np.empty((0, self.N_w))
-                self.dataRowSplit = [0]  # remember the starting/end row positions of each dataset
                 for data in self._dataSets:
                     n_spectra = len(data)
                     self.dataRowSplit.append(self.dataRowSplit[-1] + n_spectra)
@@ -149,11 +148,30 @@ class FactorizationParameters(ParameterTree):
                 self.sigPCA.emit((self.pca, self.data_pca, self.dataRowSplit))
 
             elif self.field == 'volume':  # NMF workflow
-                ir_data = ir_map(self.wavenumbers)
-                ir_data.add_image_cube(self._data, self.imgMask, self.imgGrid)
-                wmask = data_prep.data_prepper(ir_data).decent_bands
-                self.wavenumbers_select, self.data_nmf, self.nmf = single_set_NMF(ir_data, wmask, N)
-                self.sigPCA.emit((self.wavenumbers_select, self.nmf, self.data_nmf))
+                data_files = []
+                wav_masks = []
+                for file in self._dataSets:
+                    ir_data, fmt = read_map.read_all_formats(file)
+                    n_spectra = ir_data.data.shape[0]
+                    self.dataRowSplit.append(self.dataRowSplit[-1] + n_spectra)
+                    data_files.append(ir_data)
+                    ds = data_prep.data_prepper(ir_data)
+                    wav_masks.append(ds.decent_bands)
+
+                ir_data_agg = aggregate_data(self._dataSets, data_files, wav_masks)
+                self.wavenumbers_select = ir_data_agg.wavenumbers
+
+                NMF_obj = NMF(n_components=N)
+                self.data_nmf = NMF_obj.fit_transform(ir_data_agg.data)
+                self.nmf = NMF_obj
+
+                # single_set_NMF
+                # ir_data = ir_map(self.wavenumbers)
+                # ir_data.add_image_cube(self._data, self.imgMask, self.imgGrid)
+                # wmask = data_prep.data_prepper(ir_data).decent_bands
+                # self.wavenumbers_select, self.data_nmf, self.nmf = single_set_NMF(ir_data, wmask, N)
+
+                self.sigPCA.emit((self.wavenumbers_select, self.nmf, self.data_nmf, self.dataRowSplit))
 
                 labels = []
                 for i in range(self.nmf.components_.shape[0]):
@@ -174,8 +192,9 @@ class FactorizationParameters(ParameterTree):
                 name = 'NMF'
                 df_fac_components = pd.DataFrame(self.nmf.components_, columns=self.wavenumbers_select)
                 df_data_fac = pd.DataFrame(self.data_nmf)
-            df_fac_components.to_csv(name + '_components.csv')
-            df_data_fac.to_csv(name + '_data.csv')
+            df_fac_components.to_csv(name+'_components.csv')
+            df_data_fac.to_csv(name+'_data.csv')
+            np.savetxt(name+'_mapRowSplit.csv', np.array(self.dataRowSplit), fmt='%d', delimiter=',')
             print(name + ' components successfully saved!')
         else:
             print('No factorization components available.')
@@ -285,7 +304,7 @@ class FactorizationWidget(QSplitter):
         if self.field == 'spectra':
             self._fac, self._data_fac, self._dataRowSplit= fac_obj[0], fac_obj[1], fac_obj[2]
         elif self.field == 'volume':
-            self.wavenumbers, self._fac, self._data_fac = fac_obj[0], fac_obj[1], fac_obj[2]
+            self.wavenumbers, self._fac, self._data_fac, self._dataRowSplit = fac_obj[0], fac_obj[1], fac_obj[2], fac_obj[3]
 
         self._plots = []
         for i in range(4):
@@ -322,13 +341,7 @@ class FactorizationWidget(QSplitter):
             dataEvent = next(header.events(fields=[field]))
             self.wavenumbers = dataEvent['wavenumbers']
             wavenum_align.append((round(self.wavenumbers[0]), len(self.wavenumbers)))  # append (first wavenum value, wavenum length)
-
-            if field == 'spectra':  # PCA workflow
-                self.imgShapes.append(dataEvent['imgShape'])
-            # elif field == 'volume': # NMF workflow
-            #     volumeEvent = next(header.events(fields=['volume']))
-            #     self.imgMask = volumeEvent['imgMask']
-            #     self.imgShape = (self.imgMask.shape[0], self.imgMask.shape[1])
+            self.imgShapes.append(dataEvent['imgShape'])
 
         assert wavenum_align.count(wavenum_align[0]) == len(wavenum_align), 'Wavenumbers of all maps are not equal.'
 
