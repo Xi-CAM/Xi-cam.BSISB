@@ -1,6 +1,6 @@
 from xicam.plugins.DataHandlerPlugin import DataHandlerPlugin, start_doc, descriptor_doc, embedded_local_event_doc
 import functools
-from lbl_ir.io_tools.read_map import read_all_formats
+from lbl_ir.data_objects.ir_map import ir_map
 import uuid
 import h5py
 from functools import lru_cache
@@ -17,7 +17,7 @@ class MapFilePlugin(DataHandlerPlugin):
     def __call__(self, *args, E=None, i=None):
         if E is None and i is None:
             # return volume
-            return self.h5[self.root_name + 'data/image/image_cube'][:,:,:]
+            return self.h5[self.root_name + 'data/image/image_cube'][:, :, :]
 
         elif E is None and i is not None:
             # return spectra
@@ -52,7 +52,14 @@ class MapFilePlugin(DataHandlerPlugin):
 
     @classmethod
     def getVolumeEvents(cls, path, descriptor_uid):
-        yield embedded_local_event_doc(descriptor_uid, 'volume', cls, (path,))
+        with h5py.File(path, 'r') as f:
+            root_name = list(f.keys())[0] + '/'
+            wavenumbers = f[root_name + 'data/wavenumbers'][:]
+            imgMask = f[root_name + 'data/image/image_mask'][:, :]
+            imgGrid = f[root_name + 'data/image/image_grid_param'][:]
+
+        yield embedded_local_event_doc(descriptor_uid, 'volume', cls, (path,),
+                                       metadata = {'wavenumbers': wavenumbers, 'imgMask':imgMask, 'imgGrid':imgGrid})
 
     @classmethod
     def getImageDescriptor(cls, path, start_uid):
@@ -70,11 +77,13 @@ class MapFilePlugin(DataHandlerPlugin):
             # get number of frames
             n = f[root_name + 'data/image/image_cube'].shape[2]
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
-            ind_rc_map = f[root_name + '/data/image/ind_rc_map'][:, :]
+            ind_rc_map = f[root_name + 'data/image/ind_rc_map'][:, :]
             rc2ind = {tuple(x[1:]): x[0] for x in ind_rc_map}
+            mask = f[root_name + 'data/image/image_mask'][:, :]
+            imgShape = (mask.shape[0], mask.shape[1])
             
         for i in range(n):
-            yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), {'E': i}, {'wavenumbers': wavenumbers, 'rc_index': rc2ind})
+            yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), {'E': i}, {'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'imgShape':imgShape})
 
     @classmethod
     def getSpectraDescriptor(cls, path, start_uid):
@@ -92,9 +101,9 @@ class MapFilePlugin(DataHandlerPlugin):
             # get number of rows
             n = f[root_name + 'data/spectra'].shape[0]
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
-            ind_rc_map = f[root_name + '/data/image/ind_rc_map'][:,:]
+            ind_rc_map = f[root_name + 'data/image/ind_rc_map'][:,:]
             ind2rc = {x[0]: tuple(x[1:]) for x in ind_rc_map}
-            mask = f[root_name + '/data/image/image_mask'][:, :]
+            mask = f[root_name + 'data/image/image_mask'][:, :]
             imgShape = (mask.shape[0], mask.shape[1])
 
         for i in range(n):
