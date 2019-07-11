@@ -58,6 +58,7 @@ class MapView(QSplitter):
 
     def roiClicked(self):
         if self.roiButton.isChecked():
+            self.imageview.arrow.hide()
             self.roi.show()
         else:
             self.roi.hide()
