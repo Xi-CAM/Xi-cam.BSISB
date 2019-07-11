@@ -12,6 +12,7 @@ class MapViewWidget(DynImageView):
         super(MapViewWidget, self).__init__(*args, **kwargs)
         # self.scene.sigMouseMoved.connect(self.showSpectra)
         self.scene.sigMouseClicked.connect(self.showSpectra)
+        self.view.invertY(True)
 
     def setEnergy(self, lineobject):
         E = lineobject.value()
@@ -26,9 +27,14 @@ class MapViewWidget(DynImageView):
         if self.view.sceneBoundingRect().contains(pos):  # Note, when axes are added, you must get the view with self.view.getViewBox()
             mousePoint = self.view.mapSceneToView(pos)
             x, y = int(mousePoint.x()), int(mousePoint.y())
-            ind = self.rc2ind[(y,x)]
-            # print(x, y, ind, x + y * self.n_col)
-            self.sigShowSpectra.emit(ind)
+            y = self.n_row - y - 1
+            try:
+                ind = self.rc2ind[(y,x)]
+                self.sigShowSpectra.emit(ind)
+                # print(x, y, ind, x + y * self.n_col)
+            except Exception:
+                # print(x, y)
+                pass
 
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):

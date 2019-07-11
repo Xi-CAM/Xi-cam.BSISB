@@ -4,7 +4,7 @@ from lbl_ir.data_objects.ir_map import ir_map
 import uuid
 import h5py
 from functools import lru_cache
-
+import numpy as np
 import time
 
 class MapFilePlugin(DataHandlerPlugin):
@@ -21,7 +21,7 @@ class MapFilePlugin(DataHandlerPlugin):
 
         elif E is not None and i is None:
             # return image or volume
-            return self.h5[self.root_name + 'data/image/image_cube'][:,:,E]
+            return np.flipud(self.h5[self.root_name + 'data/image/image_cube'][:,:,E])
         
         else:
             raise ValueError(f'Handler could not extract data given kwargs: { dict(E=E, i=i) }')
@@ -52,12 +52,15 @@ class MapFilePlugin(DataHandlerPlugin):
             root_name = list(f.keys())[0] + '/'
             n = f[root_name + 'data/image/image_cube'].shape[2]
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
+            ind_rc_map = f[root_name + 'data/image/ind_rc_map'][:, :]
+            ind2rc = {x[0]: tuple(x[1:]) for x in ind_rc_map}
+            rc2ind = {tuple(x[1:]): x[0] for x in ind_rc_map}
             imgMask = f[root_name + 'data/image/image_mask'][:, :]
             imgShape = (imgMask.shape[0], imgMask.shape[1])
 
         for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'volume', cls, (path,), resource_kwargs={'E': i},
-                                       metadata = {'path': path, 'wavenumbers': wavenumbers, 'imgShape': imgShape})
+                                       metadata = {'path': path, 'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'index_rc': ind2rc, 'imgShape': imgShape})
 
     @classmethod
     def getImageDescriptor(cls, path, start_uid):
@@ -76,13 +79,14 @@ class MapFilePlugin(DataHandlerPlugin):
             n = f[root_name + 'data/image/image_cube'].shape[2]
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
             ind_rc_map = f[root_name + 'data/image/ind_rc_map'][:, :]
+            ind2rc = {x[0]: tuple(x[1:]) for x in ind_rc_map}
             rc2ind = {tuple(x[1:]): x[0] for x in ind_rc_map}
             imgMask = f[root_name + 'data/image/image_mask'][:, :]
             imgShape = (imgMask.shape[0], imgMask.shape[1])
             
         for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), resource_kwargs={'E': i},
-                                           metadata={'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'imgShape': imgShape})
+                                           metadata={'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'index_rc': ind2rc, 'imgShape': imgShape})
 
     @classmethod
     def getSpectraDescriptor(cls, path, start_uid):
@@ -102,12 +106,13 @@ class MapFilePlugin(DataHandlerPlugin):
             wavenumbers = f[root_name + 'data/wavenumbers'][:]
             ind_rc_map = f[root_name + 'data/image/ind_rc_map'][:,:]
             ind2rc = {x[0]: tuple(x[1:]) for x in ind_rc_map}
+            rc2ind = {tuple(x[1:]): x[0] for x in ind_rc_map}
             mask = f[root_name + 'data/image/image_mask'][:, :]
             imgShape = (mask.shape[0], mask.shape[1])
 
         for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), resource_kwargs={'i': i},
-                                           metadata={'wavenumbers':wavenumbers, 'index_rc': ind2rc[i], 'imgShape':imgShape, 'i':i})
+                                           metadata={'wavenumbers':wavenumbers, 'rc_index': rc2ind, 'index_rc': ind2rc, 'imgShape':imgShape})
 
     @classmethod
     def ingest(cls, paths):
