@@ -217,7 +217,8 @@ class FactorizationParameters(ParameterTree):
             labels = []
             for i in range(getattr(self, self.fac_method_name).components_.shape[0]):
                 labels.append(self.fac_method_name + str(i + 1))
-                plt.plot(self.wavenumbers_select, getattr(self, self.fac_method_name).components_[i, :], '.', label=labels[i])
+                plt.plot(self.wavenumbers_select, getattr(self, self.fac_method_name).components_[i, :], '.',
+                         label=labels[i])
             loadings_legend = plt.legend(loc='best')
             plt.setp(loadings_legend, draggable=True)
             plt.xlim([max(self.wavenumbers_select), min(self.wavenumbers_select)])
@@ -228,14 +229,12 @@ class FactorizationParameters(ParameterTree):
 
             df_scores = pd.DataFrame(np.append(getattr(self, self.data_fac_name), groupLabel, axis=1),
                                      columns=labels + ['Group label'])
-            df_scores.to_csv('tst.csv')
             grid = sns.pairplot(df_scores, vars=labels, hue="Group label")
             # change legend properties
             legend_labels = []
             for i in range(self.headermodel.rowCount()):
                 if (self.selectedPixelsList[i] is None) or (self.selectedPixelsList[i].size > 0):
                     legend_labels.append(self.headermodel.item(i).data(0))
-
             for t, l in zip(grid._legend.texts, legend_labels): t.set_text(l)
             plt.setp(grid._legend.get_texts(), fontsize=14)
             plt.setp(grid._legend.get_title(), fontsize=14)
@@ -331,7 +330,7 @@ class FactorizationWidget(QSplitter):
                 img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
                 img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
                                                                    1]] = data_slice
-            elif self.selectedPixelsList[selectedMapIdx].size == 0: #empty ROI
+            elif self.selectedPixelsList[selectedMapIdx].size == 0:  # empty ROI
                 img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
             else:
                 img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
@@ -353,18 +352,16 @@ class FactorizationWidget(QSplitter):
     def updateMap(self):
         if hasattr(self, '_data_fac'):
             selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
-            if len(
-                    self._dataRowSplit) < selectedMapIdx + 2:  # some maps are not included in the factorization calculation
-                msg.logMessage(
-                    'One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
+            if len(self._dataRowSplit) < selectedMapIdx + 2:  # some maps are not included in the factorization calculation
+                msg.logMessage('One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
                     msg.ERROR)
             else:
                 for i in range(4):
                     component_index = self.parameter[f'Map {i + 1} Component Index']
-                    data_slice = self._data_fac[
-                                 self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
+                    data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
                                  component_index - 1]
-                    if (self.selectedPixelsList[selectedMapIdx] is not None) and (self.selectedPixelsList[selectedMapIdx].size > 0):
+                    if (self.selectedPixelsList[selectedMapIdx] is not None) and (
+                            self.selectedPixelsList[selectedMapIdx].size > 0):
                         img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
                         img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
                                                                            1]] = data_slice
@@ -403,13 +400,14 @@ class FactorizationWidget(QSplitter):
                 selectedMapIdx = 0
             data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
                          component_index - 1]
-            if (self.selectedPixelsList[selectedMapIdx] is not None) and (self.selectedPixelsList[selectedMapIdx].size > 0):
+            if (self.selectedPixelsList[selectedMapIdx] is not None) and (
+                    self.selectedPixelsList[selectedMapIdx].size > 0):
                 img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
                 img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
                                                                    1]] = data_slice
-            elif self.selectedPixelsList[selectedMapIdx].size == 0: #empty ROI
+            elif self.selectedPixelsList[selectedMapIdx].size == 0:  # empty ROI
                 img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-            else:# full map
+            else:  # full map
                 img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
             img = np.flipud(img)
             getattr(self, self._imageDict[i]).setImage(img=img)
