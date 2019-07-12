@@ -47,7 +47,7 @@ class MapView(QSplitter):
         self.spectra.setHeader(header, field='spectra')
         self.header = header
 
-        sideLen = 3
+        sideLen = 10
         self.roi = pg.PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
         self.imageview.view.addItem(self.roi)
         self.roiState = self.roi.getState()
