@@ -32,7 +32,10 @@ class MapView(QSplitter):
         self.roiButton = QToolButton()
         self.roiButton.setText('ROI')
         self.roiButton.setCheckable(True)
+        self.roiMeanButton = QToolButton()
+        self.roiMeanButton.setText('Mean')
         self.lefttoolbar.addWidget(self.roiButton)
+        self.lefttoolbar.addWidget(self.roiMeanButton)
         self.centerlayout.addWidget(self.lefttoolbar)
         self.centerlayout.addWidget(self.imageview)
 
@@ -55,6 +58,8 @@ class MapView(QSplitter):
         self.spectra.sigEnergyChanged.connect(self.imageview.setEnergy)
         self.roiButton.clicked.connect(self.roiClicked)
         self.roi.sigRegionChangeFinished.connect(self.selectMapROI)
+        self.sigROIpixels.connect(self.spectra.getSelectedPixels)
+        self.roiMeanButton.clicked.connect(self.spectra.showMeanSpectra)
 
     def roiClicked(self):
         if self.roiButton.isChecked():
@@ -63,6 +68,7 @@ class MapView(QSplitter):
         else:
             self.roi.hide()
             self.roi.setState(self.roiState)
+        self.selectMapROI()
 
     def getImgShape(self, imgShape):
         self.row, self.col = imgShape[0], imgShape[1]
@@ -78,9 +84,11 @@ class MapView(QSplitter):
             yPos = np.round(yPos[yPos > 0])
 
             # extract x,y coordinate from selected region
-            selectedPixels = np.zeros((len(xPos), 2), dtype='int')
-            for i, (row, col) in enumerate(zip(yPos, xPos)):
-                selectedPixels[i, :] = [row, col]
+            selectedPixels = []
+            for (row, col) in zip(yPos, xPos):
+                if [row, col] not in selectedPixels:
+                    selectedPixels.append([row, col])
+            selectedPixels = np.array(selectedPixels, dtype='int')
             self.sigROIpixels.emit(selectedPixels)
         else:
             self.sigROIpixels.emit(None)
@@ -113,7 +121,7 @@ class BSISB(GUIPlugin):
 
     def appendHeader(self, header: NonDBHeader, **kwargs):
         # init item
-        item = QStandardItem(header.startdoc.get('sample_name', '????'))
+        item = QStandardItem(header.startdoc.get('sample_name', '????') + '_' + str(self.headermodel.rowCount()))
         item.header = header
         item.selectedPixels = None
 

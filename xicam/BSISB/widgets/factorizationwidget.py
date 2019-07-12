@@ -100,7 +100,7 @@ class FactorizationParameters(ParameterTree):
 
         for i in range(4):
             param = self.parameter.child(f'Map {i + 1} Component Index')
-            param.setLimits(list(range(1, N+1)))
+            param.setLimits(list(range(1, N + 1)))
 
     def calculate(self):
 
@@ -118,7 +118,7 @@ class FactorizationParameters(ParameterTree):
                 wavROIList = sorted(wavROIList)
                 wavROIidx = []
                 for i in range(len(wavROIList) // 2):
-                    wavROIidx += list(range(wavROIList[2*i], wavROIList[2*i+1]+1))
+                    wavROIidx += list(range(wavROIList[2 * i], wavROIList[2 * i + 1] + 1))
             else:
                 msg.logMessage('"Wavenumber ROI" values must be in pairs', msg.ERROR)
                 print('Factorization computation aborted.')
@@ -126,8 +126,9 @@ class FactorizationParameters(ParameterTree):
 
             self.wavenumbers_select = self.wavenumbers[wavROIidx]
             # get map ROI selected region
-            self.selectedPixelsList = [self.headermodel.item(i).selectedPixels for i in range(self.headermodel.rowCount())]
-            self.df_row_idx = [] # row index for dataframe data_fac
+            self.selectedPixelsList = [self.headermodel.item(i).selectedPixels for i in
+                                       range(self.headermodel.rowCount())]
+            self.df_row_idx = []  # row index for dataframe data_fac
 
             print('Start computing factorization ...')
             self.dataRowSplit = [0]  # remember the starting/end row positions of each dataset
@@ -135,17 +136,17 @@ class FactorizationParameters(ParameterTree):
                 self.N_w = len(self.wavenumbers_select)
                 print(self.imgShapes)
                 self._allData = np.empty((0, self.N_w))
-                for i, data in enumerate(self._dataSets): # i: map idx
+                for i, data in enumerate(self._dataSets):  # i: map idx
                     if self.selectedPixelsList[i] is None:
                         n_spectra = len(data)
                         tmp = np.zeros((n_spectra, self.N_w))
                         for j in range(n_spectra):
                             tmp[j, :] = data[j][wavROIidx]
-                            self.df_row_idx.append((self.ind2rcList[j], j))
+                            self.df_row_idx.append((self.ind2rcList[i][j], j))
                     else:
                         n_spectra = len(self.selectedPixelsList[i])
                         tmp = np.zeros((n_spectra, self.N_w))
-                        for j in range(n_spectra): # j: jth selected pixel
+                        for j in range(n_spectra):  # j: jth selected pixel
                             row_col = tuple(self.selectedPixelsList[i][j])
                             tmp[j, :] = data[self.rc2indList[i][row_col]][wavROIidx]
                             self.df_row_idx.append((row_col, self.rc2indList[i][row_col]))
@@ -153,45 +154,26 @@ class FactorizationParameters(ParameterTree):
                     self.dataRowSplit.append(self.dataRowSplit[-1] + n_spectra)
                     self._allData = np.append(self._allData, tmp, axis=0)
 
-                #mean center
+                # mean center
                 ss = StandardScaler(with_std=False)
                 data_centered = ss.fit_transform(self._allData)
                 # Do PCA
-                self.pca = PCA(n_components=N)
-                self.pca.fit(data_centered)
-                self.data_pca = self.pca.transform(data_centered)
-
-                # pop up plots
-                labels = []
-                for i in range(self.pca.components_.shape[0]):
-                    labels.append('PCA' + str(i+1))
-                    plt.plot(self.wavenumbers_select, self.pca.components_[i,:], '.', label=labels[i])
-                plt.legend()
-                plt.xlim([max(self.wavenumbers_select), min(self.wavenumbers_select)])
-
-                groupLabel = np.zeros((self.dataRowSplit[-1], 1))
-                for i in range(len(self.dataRowSplit) - 1):
-                    groupLabel[self.dataRowSplit[i]:self.dataRowSplit[i + 1]] = int(i)
-
-                df_scores = pd.DataFrame(np.append(self.data_pca, groupLabel, axis=1), columns=labels+['Group label'])
-                grid = sns.pairplot(df_scores, vars=labels, hue="Group label")
-                #change legend label
-                new_labels=[self.headermodel.item(i).data(0) for i in range(self.headermodel.rowCount())]
-                for t, l in zip(grid._legend.texts, new_labels): t.set_text(l)
-                plt.setp(grid._legend.get_texts(), fontsize=14)
-                plt.setp(grid._legend.get_title(), fontsize=14)
-                plt.setp(grid._legend, bbox_to_anchor=(1,1.02))
-
-                plt.show()
+                self.PCA = PCA(n_components=N)
+                self.PCA.fit(data_centered)
+                self.data_PCA = self.PCA.transform(data_centered)
 
                 # emit PCA and transformed data : data_PCA
-                self.sigPCA.emit((self.wavenumbers_select, self.pca, self.data_pca, self.dataRowSplit))
+                self.sigPCA.emit((self.wavenumbers_select, self.PCA, self.data_PCA, self.dataRowSplit))
+
+                # set pop up plots labels
+                fac_method = 'PCA'
+                data_fac = 'data_PCA'
 
             elif self.field == 'volume':  # NMF workflow
                 data_files = []
                 wav_masks = []
                 row_idx = np.array([], dtype='int')
-                self.allDataRowSplit = [0] # row split for complete datasets
+                self.allDataRowSplit = [0]  # row split for complete datasets
 
                 for i, file in enumerate(self._dataSets):
                     ir_data, fmt = read_map.read_all_formats(file)
@@ -203,8 +185,8 @@ class FactorizationParameters(ParameterTree):
                     # row selection
                     if self.selectedPixelsList[i] is None:
                         row_idx = np.append(row_idx, np.arange(self.allDataRowSplit[-2], self.allDataRowSplit[-1]))
-                        for k,v in self.rc2indList[i].items():
-                            self.df_row_idx.append((k,v))
+                        for k, v in self.rc2indList[i].items():
+                            self.df_row_idx.append((k, v))
                     else:
                         n_spectra = len(self.selectedPixelsList[i])
                         for j in range(n_spectra):
@@ -222,39 +204,54 @@ class FactorizationParameters(ParameterTree):
                 ir_data_agg.data = ir_data_agg.data[row_idx, :]
 
                 NMF_obj = NMF(n_components=N)
-                self.data_nmf = NMF_obj.fit_transform(ir_data_agg.data)
-                self.nmf = NMF_obj
+                self.data_NMF = NMF_obj.fit_transform(ir_data_agg.data)
+                self.NMF = NMF_obj
 
-                # single_set_NMF
-                # ir_data = ir_map(self.wavenumbers)
-                # ir_data.add_image_cube(self._data, self.imgMask, self.imgGrid)
-                # wmask = data_prep.data_prepper(ir_data).decent_bands
-                # self.wavenumbers_select, self.data_nmf, self.nmf = single_set_NMF(ir_data, wmask, N)
+                self.sigPCA.emit((self.wavenumbers_select, self.NMF, self.data_NMF, self.dataRowSplit))
 
-                self.sigPCA.emit((self.wavenumbers_select, self.nmf, self.data_nmf, self.dataRowSplit))
+                # set pop up plots labels
+                fac_method = 'NMF'
+                data_fac = 'data_NMF'
 
-                labels = []
-                for i in range(self.nmf.components_.shape[0]):
-                    labels.append('NMF' + str(i + 1))
-                    plt.plot(self.wavenumbers_select, self.nmf.components_[i, :], label=labels[i])
-                plt.legend()
-                plt.xlim([max(self.wavenumbers_select), min(self.wavenumbers)])
-                plt.show()
+            # pop up plots
+            labels = []
+            for i in range(getattr(self, fac_method).components_.shape[0]):
+                labels.append(fac_method + str(i + 1))
+                plt.plot(self.wavenumbers_select, getattr(self, fac_method).components_[i, :], '.', label=labels[i])
+            loadings_legend = plt.legend(loc='best')
+            plt.setp(loadings_legend, draggable=True)
+            plt.xlim([max(self.wavenumbers_select), min(self.wavenumbers_select)])
+
+            groupLabel = np.zeros((self.dataRowSplit[-1], 1))
+            for i in range(len(self.dataRowSplit) - 1):
+                groupLabel[self.dataRowSplit[i]:self.dataRowSplit[i + 1]] = int(i)
+
+            df_scores = pd.DataFrame(np.append(getattr(self, data_fac), groupLabel, axis=1),
+                                     columns=labels + ['Group label'])
+            grid = sns.pairplot(df_scores, vars=labels, hue="Group label")
+            # change legend properties
+            new_labels = [self.headermodel.item(i).data(0) for i in range(self.headermodel.rowCount())]
+            for t, l in zip(grid._legend.texts, new_labels): t.set_text(l)
+            plt.setp(grid._legend.get_texts(), fontsize=14)
+            plt.setp(grid._legend.get_title(), fontsize=14)
+            plt.setp(grid._legend, bbox_to_anchor=(0.2, 0.95), frame_on=True, draggable=True)
+            plt.setp(grid._legend.get_frame(), edgecolor='k', linewidth=1, alpha=1)
+            plt.show()
 
     def saveResults(self):
         if hasattr(self, 'pca') or hasattr(self, 'nmf'):
 
             if self.field == 'spectra':
                 name = 'PCA'
-                df_fac_components = pd.DataFrame(self.pca.components_, columns=self.wavenumbers_select)
-                df_data_fac = pd.DataFrame(self.data_pca, index=self.df_row_idx)
+                df_fac_components = pd.DataFrame(self.PCA.components_, columns=self.wavenumbers_select)
+                df_data_fac = pd.DataFrame(self.data_PCA, index=self.df_row_idx)
             elif self.field == 'volume':
                 name = 'NMF'
-                df_fac_components = pd.DataFrame(self.nmf.components_, columns=self.wavenumbers_select)
-                df_data_fac = pd.DataFrame(self.data_nmf, index=self.df_row_idx)
-            df_fac_components.to_csv(name+'_components.csv')
-            df_data_fac.to_csv(name+'_data.csv')
-            np.savetxt(name+'_mapRowSplit.csv', np.array(self.dataRowSplit), fmt='%d', delimiter=',')
+                df_fac_components = pd.DataFrame(self.NMF.components_, columns=self.wavenumbers_select)
+                df_data_fac = pd.DataFrame(self.data_NMF, index=self.df_row_idx)
+            df_fac_components.to_csv(name + '_components.csv')
+            df_data_fac.to_csv(name + '_data.csv')
+            np.savetxt(name + '_mapRowSplit.csv', np.array(self.dataRowSplit), fmt='%d', delimiter=',')
             print(name + ' components successfully saved!')
         else:
             print('No factorization components available.')
@@ -276,7 +273,7 @@ class FactorizationWidget(QSplitter):
 
         self.componentSpectra = PlotWidget()
         self._plotLegends = self.componentSpectra.addLegend()
-        self._colors = ['r', 'g', 'b', 'y', 'c', 'm', 'w'] # color for plots
+        self._colors = ['r', 'g', 'b', 'y', 'c', 'm', 'w']  # color for plots
         self.componentSpectra.getViewBox().invertX(True)
 
         # self.spectraROI = PlotWidget()
@@ -284,7 +281,7 @@ class FactorizationWidget(QSplitter):
         self.NEimage = BetterButtons()
         self.SWimage = BetterButtons()
         self.SEimage = BetterButtons()
-        self._imageDict = {0 : 'NWimage', 1 : 'NEimage', 2 : 'SWimage', 3 : 'SEimage'}
+        self._imageDict = {0: 'NWimage', 1: 'NEimage', 2: 'SWimage', 3: 'SEimage'}
         for i in range(4):
             getattr(self, self._imageDict[i]).setPredefinedGradient("viridis")
             getattr(self, self._imageDict[i]).getHistogramWidget().setMinimumWidth(5)
@@ -295,7 +292,8 @@ class FactorizationWidget(QSplitter):
         self.parameter = self.parametertree.parameter
         self.parametertree.sigPCA.connect(self.showComponents)
         for i in range(4):
-            self.parameter.child(f'Map {i + 1} Component Index').sigValueChanged.connect(partial(self.updateComponents, i))
+            self.parameter.child(f'Map {i + 1} Component Index').sigValueChanged.connect(
+                partial(self.updateComponents, i))
 
         self.addWidget(self.display)
         self.rightsplitter.addWidget(self.parametertree)
@@ -314,7 +312,7 @@ class FactorizationWidget(QSplitter):
         # Headers listview
         self.headerlistview = QListView()
         self.headerlistview.setModel(headermodel)
-        self.headerlistview.setSelectionModel(selectionmodel)   # This might do weird things in the map view?
+        self.headerlistview.setSelectionModel(selectionmodel)  # This might do weird things in the map view?
         self.rightsplitter.addWidget(self.headerlistview)
         self.headerlistview.setSelectionMode(QListView.SingleSelection)
 
@@ -328,10 +326,12 @@ class FactorizationWidget(QSplitter):
                 selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
             else:
                 selectedMapIdx = 0
-            data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1], component_index - 1]
+            data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
+                         component_index - 1]
             if self.selectedPixelsList[selectedMapIdx] is not None:
                 img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-                img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:, 1]] = data_slice
+                img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
+                                                                   1]] = data_slice
             else:
                 img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
             img = np.flipud(img)
@@ -344,7 +344,7 @@ class FactorizationWidget(QSplitter):
                 name = 'PCA' + str(component_index)
             elif self.field == 'volume':
                 name = 'NMF' + str(component_index)
-            self._plots[i].setData(self.wavenumbers, self._fac.components_[component_index-1, :], name=name)
+            self._plots[i].setData(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name)
             # update legend label
             sample, label = self._plotLegends.items[i]
             label.setText(name)
@@ -352,15 +352,21 @@ class FactorizationWidget(QSplitter):
     def updateMap(self):
         if hasattr(self, '_data_fac'):
             selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
-            if len(self._dataRowSplit) < selectedMapIdx + 2: # some maps are not included in the factorization calculation
-                msg.logMessage('One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.', msg.ERROR)
+            if len(
+                    self._dataRowSplit) < selectedMapIdx + 2:  # some maps are not included in the factorization calculation
+                msg.logMessage(
+                    'One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
+                    msg.ERROR)
             else:
                 for i in range(4):
                     component_index = self.parameter[f'Map {i + 1} Component Index']
-                    data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1], component_index - 1]
+                    data_slice = self._data_fac[
+                                 self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
+                                 component_index - 1]
                     if self.selectedPixelsList[selectedMapIdx] is not None:
                         img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-                        img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:, 1]] = data_slice
+                        img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
+                                                                           1]] = data_slice
                     else:
                         img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
                     img = np.flipud(img)
@@ -384,7 +390,7 @@ class FactorizationWidget(QSplitter):
             elif self.field == 'volume':
                 name = 'NMF' + str(component_index)
             # show loading plots
-            tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index-1,:], name=name,
+            tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name,
                                              pen=mkPen(self._colors[i], width=2))
             self._plots.append(tmp)
             # show score plots
@@ -392,16 +398,18 @@ class FactorizationWidget(QSplitter):
                 selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
             else:
                 selectedMapIdx = 0
-            data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx+1], component_index-1]
+            data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
+                         component_index - 1]
             if self.selectedPixelsList[selectedMapIdx] is not None:
                 img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-                img[self.selectedPixelsList[selectedMapIdx][:,0], self.selectedPixelsList[selectedMapIdx][:,1]] = data_slice
+                img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
+                                                                   1]] = data_slice
             else:
                 img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
             img = np.flipud(img)
             getattr(self, self._imageDict[i]).setImage(img=img)
 
-        #update the last image and loading plots as a recalculation complete signal
+        # update the last image and loading plots as a recalculation complete signal
         N = self.parameter['Number of Components']
         self.parameter.child(f'Map 4 Component Index').setValue(N)
 
@@ -418,7 +426,8 @@ class FactorizationWidget(QSplitter):
         for header in self.headers:
             dataEvent = next(header.events(fields=[field]))
             self.wavenumbers = dataEvent['wavenumbers']
-            wavenum_align.append((round(self.wavenumbers[0]), len(self.wavenumbers)))  # append (first wavenum value, wavenum length)
+            wavenum_align.append(
+                (round(self.wavenumbers[0]), len(self.wavenumbers)))  # append (first wavenum value, wavenum length)
             self.imgShapes.append(dataEvent['imgShape'])
             self.rc2indList.append(dataEvent['rc_index'])
             self.ind2rcList.append(dataEvent['index_rc'])
@@ -426,4 +435,3 @@ class FactorizationWidget(QSplitter):
         assert wavenum_align.count(wavenum_align[0]) == len(wavenum_align), 'Wavenumbers of all maps are not equal.'
 
         self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList, field=field)
-

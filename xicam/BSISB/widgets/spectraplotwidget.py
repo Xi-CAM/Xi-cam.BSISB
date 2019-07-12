@@ -15,18 +15,30 @@ class SpectraPlotWidget(PlotWidget):
         self._data = None
         self.positionmap = dict()
         self.wavenumbers = None
+        self._meanSpec = True # whether current spectrum is a mean spectrum
         self.line = InfiniteLine(movable=True)
         self.line.setPen((255, 255, 0, 200))
         self.line.setZValue(100)
         self.line.sigPositionChanged.connect(self.sigEnergyChanged)
         self.line.sigPositionChanged.connect(self.getEnergy)
         self.addItem(self.line)
+        self.getViewBox().invertX(True)
+        self.selectedPixels = None
 
     def getEnergy(self, lineobject):
-        self.energy = lineobject.value()
-        idx = val2ind(self.energy, self.wavenumbers)
-        self.txt.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                            X = {self.energy: .2f}, Y = {self._y[idx]: .4f}</div>')
+        x_val = lineobject.value()
+        idx = val2ind(x_val, self.wavenumbers)
+        y_val = self._y[idx]
+        if not self._meanSpec:
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                            Spectrum #{self.spectrumInd}</div>'
+        else:
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                             {self._mean_title}</div>'
+
+        txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                             X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+        self.txt.setHtml(txt_html)
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):
         self.header = header
@@ -34,6 +46,8 @@ class SpectraPlotWidget(PlotWidget):
         # get wavenumbers
         spectraEvent = next(header.events(fields=['spectra']))
         self.wavenumbers = spectraEvent['wavenumbers']
+        self.N_w = len(self.wavenumbers)
+        self.rc2ind = spectraEvent['rc_index']
         # make lazy array from document
         data = None
         try:
@@ -48,16 +62,55 @@ class SpectraPlotWidget(PlotWidget):
     def showSpectra(self, i=0):
         if self._data is not None:
             self.clear()
-            self._y = self._data[i]
-            self._ymax = max(self._y)
-            self.plot(self.wavenumbers, self._y)
-            self.getViewBox().invertX(True)
+            self._meanSpec = False
+            self.spectrumInd = i
+            self.plot(self.wavenumbers, self._data[i])
 
-    def plot(self, *args, **kwargs):
-        self.plotItem.plot(*args, **kwargs)
+    def getSelectedPixels(self, selectedPixels):
+        self.selectedPixels = selectedPixels
+        # print(selectedPixels)
+
+    def showMeanSpectra(self):
+        self._meanSpec = True
+        self.clear()
+        if self.selectedPixels is not None:
+            n_spectra = len(self.selectedPixels)
+            tmp = np.zeros((n_spectra, self.N_w))
+            for j in range(n_spectra):  # j: jth selected pixel
+                row_col = tuple(self.selectedPixels[j])
+                tmp[j, :] = self._data[self.rc2ind[row_col]]
+            self._mean_title = f'ROI mean of {n_spectra} spectra'
+        else:
+            n_spectra = len(self._data)
+            tmp = np.zeros((n_spectra, self.N_w))
+            for j in range(n_spectra):
+                tmp[j, :] = self._data[j]
+            self._mean_title = f'Total mean of {n_spectra} spectra'
+        meanSpec = np.mean(tmp, axis=0)
+        self.plot(self.wavenumbers, meanSpec)
+
+    def plot(self, x, y, *args, **kwargs):
+        # set up infinity line and get its position
+        self.plotItem.plot(x, y, *args, **kwargs)
         self.addItem(self.line)
-        self.txt = TextItem(
-            html=f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">X = {0}, Y = {0}</div>',
-            anchor=(0, 0))
-        self.txt.setPos(1500, 0.95 * self._ymax)
+        x_val = self.line.value()
+        if x_val == 0:
+            y_val = 0
+        else:
+            idx = val2ind(x_val, self.wavenumbers)
+            y_val = y[idx]
+
+        if not self._meanSpec:
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                            Spectrum #{self.spectrumInd}</div>'
+        else:
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                             {self._mean_title}</div>'
+
+        txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                             X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+        self.txt = TextItem(html=txt_html, anchor=(0, 0))
+        ymax = max(y)
+        self._y = y
+        self.txt.setPos(1500, 0.95 * ymax)
         self.addItem(self.txt)
