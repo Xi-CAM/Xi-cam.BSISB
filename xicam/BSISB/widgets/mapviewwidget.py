@@ -1,3 +1,4 @@
+import numpy as np
 from xicam.gui.widgets.dynimageview import DynImageView
 from xicam.core import msg
 from xicam.core.data import NonDBHeader
@@ -36,14 +37,14 @@ class MapViewWidget(DynImageView):
         if self.view.sceneBoundingRect().contains(pos):  # Note, when axes are added, you must get the view with self.view.getViewBox()
             mousePoint = self.view.mapSceneToView(pos)
             x, y = int(mousePoint.x()), int(mousePoint.y())
-            y = self.n_row - y - 1
+            y = self.row - y - 1
             try:
                 ind = self.rc2ind[(y,x)]
                 self.sigShowSpectra.emit(ind)
                 # print(x, y, ind, x + y * self.n_col)
 
                 #update arrow
-                self.arrow.setPos(x + 0.5, self.n_row - y - 0.5)
+                self.arrow.setPos(x + 0.5, self.row - y - 0.5)
                 self.arrow.show()
                 # update text
                 self.txt.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 8pt">X: {x}</div>\
@@ -64,15 +65,16 @@ class MapViewWidget(DynImageView):
         data = None
         try:
             data = header.meta_array(field)
-            self.n_row = data.shape[1]
-            self.n_col = data.shape[2]
-            self.txt.setPos(self.n_col, 0)
+            self.row = data.shape[1]
+            self.col = data.shape[2]
+            self.txt.setPos(self.col, 0)
         except IndexError:
             msg.logMessage('Header object contained no frames with field ''{field}''.', msg.ERROR)
 
         if data is not None:
             # kwargs['transform'] = QTransform(1, 0, 0, -1, 0, data.shape[-2])
             self.setImage(img=data, *args, **kwargs)
+            self._data = data
 
     def updateImage(self, autoHistogramRange=True):
         super(MapViewWidget, self).updateImage(autoHistogramRange)
@@ -81,3 +83,10 @@ class MapViewWidget(DynImageView):
     def setImage(self, img, **kwargs):
         super(MapViewWidget, self).setImage(img, **kwargs)
         self.ui.roiPlot.setVisible(False)
+
+    def makeMask(self, thresholds):
+        peak1550 = val2ind(1550, self.wavenumbers)
+        thr1550 = thresholds[0]
+        mask = self._data[peak1550] > thr1550
+        mask = mask.astype(np.int)
+        return mask

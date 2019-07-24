@@ -24,21 +24,23 @@ class SpectraPlotWidget(PlotWidget):
         self.addItem(self.line)
         self.getViewBox().invertX(True)
         self.selectedPixels = None
+        self._y = None
 
     def getEnergy(self, lineobject):
-        x_val = lineobject.value()
-        idx = val2ind(x_val, self.wavenumbers)
-        y_val = self._y[idx]
-        if not self._meanSpec:
-            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                            Spectrum #{self.spectrumInd}</div>'
-        else:
-            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                             {self._mean_title}</div>'
+        if self._y is not None:
+            x_val = lineobject.value()
+            idx = val2ind(x_val, self.wavenumbers)
+            y_val = self._y[idx]
+            if not self._meanSpec:
+                txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                Spectrum #{self.spectrumInd}</div>'
+            else:
+                txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                 {self._mean_title}</div>'
 
-        txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                             X = {x_val: .2f}, Y = {y_val: .4f}</div>'
-        self.txt.setHtml(txt_html)
+            txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                 X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+            self.txt.setHtml(txt_html)
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):
         self.header = header

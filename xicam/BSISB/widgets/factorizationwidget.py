@@ -315,27 +315,13 @@ class FactorizationWidget(QSplitter):
         self.headerlistview.setSelectionMode(QListView.SingleSelection)
 
     def updateComponents(self, i):
-        # i is imageview number
+        # i is imageview/window number
         # component_index is the PCA component index
         component_index = self.parameter[f'Map {i + 1} Component Index']
         # update scoreplots on view i
         if hasattr(self, '_data_fac'):
-            if self.selectionmodel.hasSelection():
-                selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
-            else:
-                selectedMapIdx = 0
-            data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
-                         component_index - 1]
-            if (self.selectedPixelsList[selectedMapIdx] is not None) and (self.selectedPixelsList[selectedMapIdx].size > 0):
-                img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-                img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
-                                                                   1]] = data_slice
-            elif self.selectedPixelsList[selectedMapIdx].size == 0:  # empty ROI
-                img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-            else:
-                img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
-            img = np.flipud(img)
-            getattr(self, self._imageDict[i]).setImage(img=img)
+            # update map
+            self.drawMap(component_index, i)
 
         # update PCA components
         if hasattr(self, '_plots'):
@@ -358,19 +344,8 @@ class FactorizationWidget(QSplitter):
             else:
                 for i in range(4):
                     component_index = self.parameter[f'Map {i + 1} Component Index']
-                    data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
-                                 component_index - 1]
-                    if (self.selectedPixelsList[selectedMapIdx] is not None) and (
-                            self.selectedPixelsList[selectedMapIdx].size > 0):
-                        img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-                        img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
-                                                                           1]] = data_slice
-                    elif self.selectedPixelsList[selectedMapIdx].size == 0:  # empty ROI
-                        img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-                    else:
-                        img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
-                    img = np.flipud(img)
-                    getattr(self, self._imageDict[i]).setImage(img=img)
+                    # update map
+                    self.drawMap(component_index, i)
 
     def showComponents(self, fac_obj):
         # get map ROI selected region
@@ -394,27 +369,32 @@ class FactorizationWidget(QSplitter):
                                              pen=mkPen(self._colors[i], width=2))
             self._plots.append(tmp)
             # show score plots
-            if self.selectionmodel.hasSelection():
-                selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
-            else:
-                selectedMapIdx = 0
-            data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
-                         component_index - 1]
-            if (self.selectedPixelsList[selectedMapIdx] is not None) and (
-                    self.selectedPixelsList[selectedMapIdx].size > 0):
-                img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-                img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
-                                                                   1]] = data_slice
-            elif self.selectedPixelsList[selectedMapIdx].size == 0:  # empty ROI
-                img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-            else:  # full map
-                img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
-            img = np.flipud(img)
-            getattr(self, self._imageDict[i]).setImage(img=img)
+            self.drawMap(component_index, i)
 
         # update the last image and loading plots as a recalculation complete signal
         N = self.parameter['Number of Components']
         self.parameter.child(f'Map 4 Component Index').setValue(N)
+
+    def drawMap(self, component_index, i):
+        # i is imageview/window number
+        if self.selectionmodel.hasSelection():
+            selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        else:
+            selectedMapIdx = 0
+
+        data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
+                     component_index - 1]
+        # draw map
+        if self.selectedPixelsList[selectedMapIdx] is None:  # full map
+            img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
+        elif self.selectedPixelsList[selectedMapIdx].size == 0:  # empty ROI
+            img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
+        else:
+            img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
+            img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
+                                                               1]] = data_slice
+        img = np.flipud(img)
+        getattr(self, self._imageDict[i]).setImage(img=img)
 
     def setHeader(self, field: str):
 
@@ -435,6 +415,7 @@ class FactorizationWidget(QSplitter):
             self.rc2indList.append(dataEvent['rc_index'])
             self.ind2rcList.append(dataEvent['index_rc'])
 
-        assert wavenum_align.count(wavenum_align[0]) == len(wavenum_align), 'Wavenumbers of all maps are not equal.'
+        if wavenum_align:
+            assert wavenum_align.count(wavenum_align[0]) == len(wavenum_align), 'Wavenumbers of all maps are not equal.'
 
         self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList, field=field)

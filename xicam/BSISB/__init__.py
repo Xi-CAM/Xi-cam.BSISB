@@ -4,14 +4,16 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import pyqtgraph as pg
 import numpy as np
+import sys
 from xicam.core.data import NonDBHeader
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from xicam.BSISB.widgets.factorizationwidget import FactorizationWidget
 
-from xicam.core import msg
 from xicam.plugins import GUIPlugin, GUILayout
 from xicam.gui.widgets.tabview import TabView
+from pyqtgraph.parametertree import ParameterTree, Parameter
+
 
 
 class MapView(QSplitter):
@@ -24,29 +26,54 @@ class MapView(QSplitter):
         self.imageview = MapViewWidget()
         self.spectra = SpectraPlotWidget()
 
-        self.imageview_and_toolbar = QWidget()
-        self.centerlayout = QHBoxLayout()
-        self.imageview_and_toolbar.setLayout(self.centerlayout)
-        self.lefttoolbar = QToolBar()
-        self.lefttoolbar.setOrientation(Qt.Vertical)
+        self.imageview_and_toolbar = QSplitter()
+        self.imageview_and_toolbar.setOrientation(Qt.Horizontal)
+        self.toolbar_and_param = QSplitter()
+        self.toolbar_and_param.setOrientation(Qt.Vertical)
+        #define tool bar
+        self.toolBar = QWidget()
+        self.gridlayout = QGridLayout()
+        self.toolBar.setLayout(self.gridlayout)
+        # self.toolBar.setOrientation(Qt.Vertical)
+        #add tool bar buttons
         self.roiButton = QToolButton()
         self.roiButton.setText('ROI')
         self.roiButton.setCheckable(True)
         self.roiMeanButton = QToolButton()
         self.roiMeanButton.setText('Mean')
-        self.lefttoolbar.addWidget(self.roiButton)
-        self.lefttoolbar.addWidget(self.roiMeanButton)
-        self.centerlayout.addWidget(self.lefttoolbar)
-        self.centerlayout.addWidget(self.imageview)
+        self.maskButton = QToolButton()
+        self.maskButton.setText('Mask')
+        self.maskButton.setCheckable(True)
+        self.gridlayout.addWidget(self.roiButton, 0, 0, 1, 1)
+        self.gridlayout.addWidget(self.roiMeanButton, 1, 0, 1, 1)
+        self.gridlayout.addWidget(self.maskButton, 0, 1, 1, 1)
 
+        self.parameterTree = ParameterTree()
+        self.parameter = Parameter(name='Threshhold', type='group',
+                                   children=[{'name': 'Amide II',
+                                              'value': 0,
+                                              'type': 'float'}])
+        self.parameter.child('Amide II').setOpts(step=0.1)
+        self.parameterTree.setParameters(self.parameter, showTop=False)
+        self.parameterTree.setHeaderLabels(['Params','Value'])
+        self.parameterTree.setIndentation(0)
+
+        # Assemble widgets
+        self.toolbar_and_param.addWidget(self.toolBar)
+        self.toolbar_and_param.addWidget(self.parameterTree)
+        self.toolbar_and_param.setSizes([1000, 1]) #adjust initial splitter size
+        self.imageview_and_toolbar.addWidget(self.toolbar_and_param)
+        self.imageview_and_toolbar.addWidget(self.imageview)
+        self.imageview_and_toolbar.setSizes([1, 1000])#adjust initial splitter size
         self.addWidget(self.imageview_and_toolbar)
         self.addWidget(self.spectra)
+        self.setSizes([1000, 1000])  # adjust initial splitter size
 
         # readin header
         self.imageview.setHeader(header, field='image')
         self.spectra.setHeader(header, field='spectra')
         self.header = header
-
+        #setup ROI item
         sideLen = 10
         self.roi = pg.PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
         self.imageview.view.addItem(self.roi)
@@ -60,11 +87,16 @@ class MapView(QSplitter):
         self.roi.sigRegionChangeFinished.connect(self.selectMapROI)
         self.sigROIpixels.connect(self.spectra.getSelectedPixels)
         self.roiMeanButton.clicked.connect(self.spectra.showMeanSpectra)
+        self.maskButton.clicked.connect(self.showAutoMask)
+        self.parameter.child('Amide II').sigValueChanged.connect(self.showAutoMask)
 
     def roiClicked(self):
         if self.roiButton.isChecked():
             self.imageview.arrow.hide()
             self.roi.show()
+            if self.maskButton.isChecked():
+                self.maskButton.setChecked(False)
+                self.showAutoMask()
         else:
             self.roi.hide()
             self.roi.setState(self.roiState)
@@ -72,15 +104,22 @@ class MapView(QSplitter):
 
     def getImgShape(self, imgShape):
         self.row, self.col = imgShape[0], imgShape[1]
+        #set up X,Y grid
+        x = np.linspace(0, self.col - 1, self.col)
+        y = np.linspace(self.row - 1, 0, self.row)
+        self.X, self.Y = np.meshgrid(x, y)
+        # setup automask item
+        self.mask = np.ones((self.row, self.col))
+        self.autoMask = pg.ImageItem(self.mask, axisOrder="row-major", autoLevels=True, opacity=0.3)
+        self.imageview.view.addItem(self.autoMask)
+        self.autoMask.hide()
 
     def selectMapROI(self):
         if self.roiButton.isChecked():
-            x = np.linspace(0, self.col - 1, self.col)
-            y = np.linspace(self.row - 1, 0, self.row)
-            X, Y = np.meshgrid(x, y)
-            xPos = self.roi.getArrayRegion(X, self.imageview.imageItem)
+            #get x,y positions list
+            xPos = self.roi.getArrayRegion(self.X, self.imageview.imageItem)
             xPos = np.round(xPos[xPos > 0])
-            yPos = self.roi.getArrayRegion(Y, self.imageview.imageItem)
+            yPos = self.roi.getArrayRegion(self.Y, self.imageview.imageItem)
             yPos = np.round(yPos[yPos > 0])
 
             # extract x,y coordinate from selected region
@@ -91,6 +130,29 @@ class MapView(QSplitter):
             selectedPixels = np.array(selectedPixels, dtype='int')
             self.sigROIpixels.emit(selectedPixels)
         else:
+            self.sigROIpixels.emit(None)
+
+    def showAutoMask(self):
+
+        if self.maskButton.isChecked():
+            # turn off roiButton
+            if self.roiButton.isChecked():
+                self.roiButton.setChecked(False)
+                self.roiClicked()
+            # update and show mask
+            self.mask = self.imageview.makeMask([self.parameter['Amide II']])
+            self.autoMask.setImage(self.mask)
+            self.autoMask.show()
+            # select pixels
+            selectedPixels = []
+            mask = self.mask.astype(np.bool)
+            for (row, col) in zip(self.Y[mask], self.X[mask]):
+                selectedPixels.append([row, col])
+            selectedPixels = np.array(selectedPixels, dtype='int')
+            self.sigROIpixels.emit(selectedPixels)
+        else:
+            self.autoMask.hide()
+            self.mask[:, :] = 1
             self.sigROIpixels.emit(None)
 
 
