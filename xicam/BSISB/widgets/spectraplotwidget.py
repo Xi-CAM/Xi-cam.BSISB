@@ -88,7 +88,10 @@ class SpectraPlotWidget(PlotWidget):
             for j in range(n_spectra):
                 tmp[j, :] = self._data[j]
             self._mean_title = f'Total mean of {n_spectra} spectra'
-        meanSpec = np.mean(tmp, axis=0)
+        if n_spectra > 0:
+            meanSpec = np.mean(tmp, axis=0)
+        else:
+            meanSpec = np.zeros_like(self.wavenumbers) + 1e-3
         self.plot(self.wavenumbers, meanSpec)
 
     def plot(self, x, y, *args, **kwargs):

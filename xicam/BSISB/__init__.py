@@ -37,12 +37,12 @@ class MapView(QSplitter):
         # self.toolBar.setOrientation(Qt.Vertical)
         #add tool bar buttons
         self.roiButton = QToolButton()
-        self.roiButton.setText('ROI')
+        self.roiButton.setText('manROI')
         self.roiButton.setCheckable(True)
         self.roiMeanButton = QToolButton()
-        self.roiMeanButton.setText('Mean')
+        self.roiMeanButton.setText('ROImean')
         self.maskButton = QToolButton()
-        self.maskButton.setText('Mask')
+        self.maskButton.setText('autoROI')
         self.maskButton.setCheckable(True)
         self.gridlayout.addWidget(self.roiButton, 0, 0, 1, 1)
         self.gridlayout.addWidget(self.roiMeanButton, 1, 0, 1, 1)
@@ -73,6 +73,9 @@ class MapView(QSplitter):
         self.imageview.setHeader(header, field='image')
         self.spectra.setHeader(header, field='spectra')
         self.header = header
+        # init pixel selection dict
+        self.allSelection = {'ROI': None, 'Mask': None}
+
         #setup ROI item
         sideLen = 10
         self.roi = pg.PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
@@ -94,9 +97,6 @@ class MapView(QSplitter):
         if self.roiButton.isChecked():
             self.imageview.arrow.hide()
             self.roi.show()
-            if self.maskButton.isChecked():
-                self.maskButton.setChecked(False)
-                self.showAutoMask()
         else:
             self.roi.hide()
             self.roi.setState(self.roiState)
@@ -123,37 +123,41 @@ class MapView(QSplitter):
             yPos = np.round(yPos[yPos > 0])
 
             # extract x,y coordinate from selected region
-            selectedPixels = []
-            for (row, col) in zip(yPos, xPos):
-                if [row, col] not in selectedPixels:
-                    selectedPixels.append([row, col])
-            selectedPixels = np.array(selectedPixels, dtype='int')
-            self.sigROIpixels.emit(selectedPixels)
+            selectedPixels = list(zip(yPos, xPos))
+            self.intersectSelection('ROI', selectedPixels)
         else:
-            self.sigROIpixels.emit(None)
+            self.intersectSelection('ROI', None) # no ROI, select all pixels
 
     def showAutoMask(self):
-
         if self.maskButton.isChecked():
-            # turn off roiButton
-            if self.roiButton.isChecked():
-                self.roiButton.setChecked(False)
-                self.roiClicked()
             # update and show mask
             self.mask = self.imageview.makeMask([self.parameter['Amide II']])
             self.autoMask.setImage(self.mask)
             self.autoMask.show()
             # select pixels
-            selectedPixels = []
             mask = self.mask.astype(np.bool)
-            for (row, col) in zip(self.Y[mask], self.X[mask]):
-                selectedPixels.append([row, col])
-            selectedPixels = np.array(selectedPixels, dtype='int')
-            self.sigROIpixels.emit(selectedPixels)
+            selectedPixels = list(zip(self.Y[mask], self.X[mask]))
+            self.intersectSelection('Mask', selectedPixels)
         else:
             self.autoMask.hide()
             self.mask[:, :] = 1
-            self.sigROIpixels.emit(None)
+            self.intersectSelection('Mask', None) # no mask, select all pixels
+
+    def intersectSelection(self, selector, selectedPixels):
+        # update pixel selection dict
+        self.allSelection[selector] = selectedPixels
+        if (self.allSelection['ROI'] is None) and (self.allSelection['Mask'] is None):
+            self.sigROIpixels.emit(None) # no ROI, select all pixels
+            return
+        elif self.allSelection['ROI'] is None:
+            allSelected = set(self.allSelection['Mask']) #de-duplication of pixels
+        elif self.allSelection['Mask'] is None:
+            allSelected = set(self.allSelection['ROI']) #de-duplication of pixels
+        else:
+            allSelected = set(self.allSelection['ROI']) & set(self.allSelection['Mask'])
+
+        allSelected = np.array(list(allSelected), dtype='int')  # convert to array
+        self.sigROIpixels.emit(allSelected)
 
 
 class BSISB(GUIPlugin):

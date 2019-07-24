@@ -134,8 +134,9 @@ class FactorizationParameters(ParameterTree):
             self.dataRowSplit = [0]  # remember the starting/end row positions of each dataset
             if self.field == 'spectra':  # PCA workflow
                 self.N_w = len(self.wavenumbers_select)
-                print(self.imgShapes)
                 self._allData = np.empty((0, self.N_w))
+                print(self.imgShapes)
+
                 for i, data in enumerate(self._dataSets):  # i: map idx
                     if self.selectedPixelsList[i] is None:
                         n_spectra = len(data)
@@ -154,26 +155,33 @@ class FactorizationParameters(ParameterTree):
                     self.dataRowSplit.append(self.dataRowSplit[-1] + n_spectra)
                     self._allData = np.append(self._allData, tmp, axis=0)
 
-                # mean center
-                ss = StandardScaler(with_std=False)
-                data_centered = ss.fit_transform(self._allData)
-                # Do PCA
-                self.PCA = PCA(n_components=N)
-                self.PCA.fit(data_centered)
-                self.data_PCA = self.PCA.transform(data_centered)
-
-                # emit PCA and transformed data : data_PCA
-                self.sigPCA.emit((self.wavenumbers_select, self.PCA, self.data_PCA, self.dataRowSplit))
-
-                # set pop up plots labels
+                # define pop up plots labels
                 self.fac_method_name = 'PCA'
                 self.data_fac_name = 'data_PCA'
+
+                if len(self._allData) > 0:
+                    # mean center
+                    ss = StandardScaler(with_std=False)
+                    data_centered = ss.fit_transform(self._allData)
+                    # Do PCA
+                    self.PCA = PCA(n_components=N)
+                    self.PCA.fit(data_centered)
+                    self.data_PCA = self.PCA.transform(data_centered)
+                    # pop up plots
+                    self.popup_plots()
+                else:
+                    print('The data matrix is empty. No PCA is performed.')
+                    msg.logMessage('The data matrix is empty. No PCA is performed.', msg.ERROR)
+                    self.PCA, self.data_PCA = None, None
+                # emit PCA and transformed data : data_PCA
+                self.sigPCA.emit((self.wavenumbers_select, self.PCA, self.data_PCA, self.dataRowSplit))
 
             elif self.field == 'volume':  # NMF workflow
                 data_files = []
                 wav_masks = []
                 row_idx = np.array([], dtype='int')
                 self.allDataRowSplit = [0]  # row split for complete datasets
+                print(self.imgShapes)
 
                 for i, file in enumerate(self._dataSets):
                     ir_data, fmt = read_map.read_all_formats(file)
@@ -197,53 +205,61 @@ class FactorizationParameters(ParameterTree):
 
                     self.dataRowSplit.append(self.dataRowSplit[-1] + n_spectra)  # row split for ROI selected rows
 
-                ir_data_agg = aggregate_data(self._dataSets, data_files, wav_masks)
-                col_idx = list(set(wavROIidx) & set(ir_data_agg.master_wmask))
-                self.wavenumbers_select = self.wavenumbers[col_idx]
-                ir_data_agg.data = ir_data_agg.data[:, col_idx]
-                ir_data_agg.data = ir_data_agg.data[row_idx, :]
-
-                NMF_obj = NMF(n_components=N)
-                self.data_NMF = NMF_obj.fit_transform(ir_data_agg.data)
-                self.NMF = NMF_obj
-
-                self.sigPCA.emit((self.wavenumbers_select, self.NMF, self.data_NMF, self.dataRowSplit))
-
-                # set pop up plots labels
+                # define pop up plots labels
                 self.fac_method_name = 'NMF'
                 self.data_fac_name = 'data_NMF'
 
-            # pop up plots
-            labels = []
-            for i in range(getattr(self, self.fac_method_name).components_.shape[0]):
-                labels.append(self.fac_method_name + str(i + 1))
-                plt.plot(self.wavenumbers_select, getattr(self, self.fac_method_name).components_[i, :], '.',
-                         label=labels[i])
-            loadings_legend = plt.legend(loc='best')
-            plt.setp(loadings_legend, draggable=True)
-            plt.xlim([max(self.wavenumbers_select), min(self.wavenumbers_select)])
+                if len(self.df_row_idx) > 0:
+                    # aggregate datasets
+                    ir_data_agg = aggregate_data(self._dataSets, data_files, wav_masks)
+                    col_idx = list(set(wavROIidx) & set(ir_data_agg.master_wmask))
+                    self.wavenumbers_select = self.wavenumbers[col_idx]
+                    ir_data_agg.data = ir_data_agg.data[:, col_idx]
+                    ir_data_agg.data = ir_data_agg.data[row_idx, :]
+                    # perform NMF
+                    NMF_obj = NMF(n_components=N)
+                    self.data_NMF = NMF_obj.fit_transform(ir_data_agg.data)
+                    self.NMF = NMF_obj
+                    # pop up plots
+                    self.popup_plots()
+                else:
+                    print('The data matrix is empty. No NMF is performed.')
+                    msg.logMessage('The data matrix is empty. No NMF is performed.', msg.ERROR)
+                    self.NMF, self.data_NMF = None, None
+                # emit NMF and transformed data : data_NMF
+                self.sigPCA.emit((self.wavenumbers_select, self.NMF, self.data_NMF, self.dataRowSplit))
 
-            groupLabel = np.zeros((self.dataRowSplit[-1], 1))
-            for i in range(len(self.dataRowSplit) - 1):
-                groupLabel[self.dataRowSplit[i]:self.dataRowSplit[i + 1]] = int(i)
+    def popup_plots(self):
+        labels = []
+        for i in range(getattr(self, self.fac_method_name).components_.shape[0]):
+            labels.append(self.fac_method_name + str(i + 1))
+            plt.plot(self.wavenumbers_select, getattr(self, self.fac_method_name).components_[i, :], '.',
+                     label=labels[i])
+        loadings_legend = plt.legend(loc='best')
+        plt.setp(loadings_legend, draggable=True)
+        plt.xlim([max(self.wavenumbers_select), min(self.wavenumbers_select)])
 
-            df_scores = pd.DataFrame(np.append(getattr(self, self.data_fac_name), groupLabel, axis=1),
-                                     columns=labels + ['Group label'])
-            grid = sns.pairplot(df_scores, vars=labels, hue="Group label")
-            # change legend properties
-            legend_labels = []
-            for i in range(self.headermodel.rowCount()):
-                if (self.selectedPixelsList[i] is None) or (self.selectedPixelsList[i].size > 0):
-                    legend_labels.append(self.headermodel.item(i).data(0))
-            for t, l in zip(grid._legend.texts, legend_labels): t.set_text(l)
-            plt.setp(grid._legend.get_texts(), fontsize=14)
-            plt.setp(grid._legend.get_title(), fontsize=14)
-            plt.setp(grid._legend, bbox_to_anchor=(0.2, 0.95), frame_on=True, draggable=True)
-            plt.setp(grid._legend.get_frame(), edgecolor='k', linewidth=1, alpha=1)
-            plt.show()
+        groupLabel = np.zeros((self.dataRowSplit[-1], 1))
+        for i in range(len(self.dataRowSplit) - 1):
+            groupLabel[self.dataRowSplit[i]:self.dataRowSplit[i + 1]] = int(i)
+
+        df_scores = pd.DataFrame(np.append(getattr(self, self.data_fac_name), groupLabel, axis=1),
+                                 columns=labels + ['Group label'])
+        grid = sns.pairplot(df_scores, vars=labels, hue="Group label")
+        # change legend properties
+        legend_labels = []
+        for i in range(self.headermodel.rowCount()):
+            if (self.selectedPixelsList[i] is None) or (self.selectedPixelsList[i].size > 0):
+                legend_labels.append(self.headermodel.item(i).data(0))
+        for t, l in zip(grid._legend.texts, legend_labels): t.set_text(l)
+        plt.setp(grid._legend.get_texts(), fontsize=14)
+        plt.setp(grid._legend.get_title(), fontsize=14)
+        plt.setp(grid._legend, bbox_to_anchor=(0.2, 0.95), frame_on=True, draggable=True)
+        plt.setp(grid._legend.get_frame(), edgecolor='k', linewidth=1, alpha=1)
+        plt.show()
 
     def saveResults(self):
-        if hasattr(self, 'PCA') or hasattr(self, 'NMF'):
+        if (hasattr(self, 'PCA') and self.PCA is not None) or (hasattr(self, 'NMF') and self.NMF is not None):
             name = self.fac_method_name
             df_fac_components = pd.DataFrame(getattr(self, name).components_, columns=self.wavenumbers_select)
             df_data_fac = pd.DataFrame(getattr(self, self.data_fac_name), index=self.df_row_idx)
@@ -319,7 +335,7 @@ class FactorizationWidget(QSplitter):
         # component_index is the PCA component index
         component_index = self.parameter[f'Map {i + 1} Component Index']
         # update scoreplots on view i
-        if hasattr(self, '_data_fac'):
+        if hasattr(self, '_data_fac') and (self._data_fac is not None):
             # update map
             self.drawMap(component_index, i)
 
@@ -336,8 +352,8 @@ class FactorizationWidget(QSplitter):
             label.setText(name)
 
     def updateMap(self):
-        if hasattr(self, '_data_fac'):
-            selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        if hasattr(self, '_data_fac') and (self._data_fac is not None):
             if len(self._dataRowSplit) < selectedMapIdx + 2:  # some maps are not included in the factorization calculation
                 msg.logMessage('One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
                     msg.ERROR)
@@ -346,6 +362,10 @@ class FactorizationWidget(QSplitter):
                     component_index = self.parameter[f'Map {i + 1} Component Index']
                     # update map
                     self.drawMap(component_index, i)
+        else:  #clear maps
+            for i in range(4):
+                img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
+                getattr(self, self._imageDict[i]).setImage(img=img)
 
     def showComponents(self, fac_obj):
         # get map ROI selected region
@@ -354,26 +374,31 @@ class FactorizationWidget(QSplitter):
         self.componentSpectra.clear()
         for sample, label in self._plotLegends.items[:]:
             self._plotLegends.removeItem(label.text)
+        #clear maps
+        for i in range(4):
+            img = np.zeros((self.imgShapes[0][0], self.imgShapes[0][1]))
+            getattr(self, self._imageDict[i]).setImage(img=img)
 
         self.wavenumbers, self._fac, self._data_fac, self._dataRowSplit = fac_obj[0], fac_obj[1], fac_obj[2], fac_obj[3]
 
-        self._plots = []
-        for i in range(4):
-            component_index = self.parameter[f'Map {i + 1} Component Index']
-            if self.field == 'spectra':
-                name = 'PCA' + str(component_index)
-            elif self.field == 'volume':
-                name = 'NMF' + str(component_index)
-            # show loading plots
-            tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name,
-                                             pen=mkPen(self._colors[i], width=2))
-            self._plots.append(tmp)
-            # show score plots
-            self.drawMap(component_index, i)
+        if self._fac is not None:
+            self._plots = []
+            for i in range(4):
+                component_index = self.parameter[f'Map {i + 1} Component Index']
+                if self.field == 'spectra':
+                    name = 'PCA' + str(component_index)
+                elif self.field == 'volume':
+                    name = 'NMF' + str(component_index)
+                # show loading plots
+                tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name,
+                                                 pen=mkPen(self._colors[i], width=2))
+                self._plots.append(tmp)
+                # show score plots
+                self.drawMap(component_index, i)
 
-        # update the last image and loading plots as a recalculation complete signal
-        N = self.parameter['Number of Components']
-        self.parameter.child(f'Map 4 Component Index').setValue(N)
+            # update the last image and loading plots as a recalculation complete signal
+            N = self.parameter['Number of Components']
+            self.parameter.child(f'Map 4 Component Index').setValue(N)
 
     def drawMap(self, component_index, i):
         # i is imageview/window number
