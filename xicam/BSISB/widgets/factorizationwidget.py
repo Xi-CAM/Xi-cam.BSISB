@@ -1,9 +1,8 @@
 from qtpy.QtWidgets import QSplitter, QGridLayout, QWidget, QListView
 from xicam.core import msg
 from xicam.gui.widgets.imageviewmixins import BetterButtons
-from .mapviewwidget import MapViewWidget
-from pyqtgraph import PlotWidget, ImageView, mkPen
-from qtpy.QtCore import Qt, QItemSelectionModel
+from pyqtgraph import PlotWidget, mkPen
+from qtpy.QtCore import Qt, QItemSelectionModel, QSignalBlocker
 from qtpy.QtGui import QStandardItemModel
 from functools import partial
 from qtpy.QtCore import Signal
@@ -12,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from umap import UMAP
 import numpy as np
 import pandas as pd
+import pyqtgraph as pg
 import matplotlib.pyplot as plt
 import seaborn as sns
 from lbl_ir.data_objects.ir_map import val2ind
@@ -277,6 +277,8 @@ class FactorizationWidget(QSplitter):
         self.headermodel = headermodel
         self.selectionmodel = selectionmodel
         self.selectionmodel.selectionChanged.connect(self.updateMap)
+        self.selectionmodel.selectionChanged.connect(self.updateRoiMask)
+        self.selectMapIdx = 0
 
         self.rightsplitter = QSplitter()
         self.rightsplitter.setOrientation(Qt.Vertical)
@@ -295,12 +297,27 @@ class FactorizationWidget(QSplitter):
         self.NEimage = BetterButtons()
         self.SWimage = BetterButtons()
         self.SEimage = BetterButtons()
+        # setup ROI item
+        sideLen = 10
+        self.roiList = []
+        self.maskList = []
         self._imageDict = {0: 'NWimage', 1: 'NEimage', 2: 'SWimage', 3: 'SEimage'}
         for i in range(4):
             getattr(self, self._imageDict[i]).setPredefinedGradient("viridis")
             getattr(self, self._imageDict[i]).getHistogramWidget().setMinimumWidth(5)
             getattr(self, self._imageDict[i]).view.invertY(True)
             getattr(self, self._imageDict[i]).imageItem.setOpts(axisOrder="row-major")
+            # set up roi item
+            roi = pg.PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
+            roi.hide()
+            self.roiInitState = roi.getState()
+            self.roiList.append(roi)
+            # set up mask item
+            maskItem = pg.ImageItem(np.ones((1,1)), axisOrder="row-major", autoLevels=True, opacity=0.3)
+            maskItem.hide()
+            self.maskList.append(maskItem)
+            getattr(self, self._imageDict[i]).view.addItem(roi)
+            getattr(self, self._imageDict[i]).view.addItem(maskItem)
 
         self.parametertree = FactorizationParameters(headermodel, selectionmodel)
         self.parameter = self.parametertree.parameter
@@ -330,6 +347,40 @@ class FactorizationWidget(QSplitter):
         self.rightsplitter.addWidget(self.headerlistview)
         self.headerlistview.setSelectionMode(QListView.SingleSelection)
 
+    def updateRoiMask(self):
+        if self.selectionmodel.hasSelection():
+            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        # update roi
+        try:
+            roiState = self.headermodel.item(self.selectMapIdx).roiState
+            for i in range(4):
+                if roiState[0]: #roi on
+                    self.roiList[i].show()
+                else:
+                    self.roiList[i].hide()
+                    self.roiList[i].setState(self.roiInitState)
+                # update roi state
+                self.roiList[i].blockSignals(True)
+                self.roiList[i].setState(roiState[1])
+                self.roiList[i].blockSignals(False)
+
+        except Exception:
+            for i in range(4):
+                self.roiList[i].hide()
+                # self.roiList[i].setState(self.roiInitState)
+        # update mask
+        try:
+            maskState = self.headermodel.item(self.selectMapIdx).maskState
+            for i in range(4):
+                self.maskList[i].setImage(maskState[1])
+                if maskState[0]:  # roi on
+                    self.maskList[i].show()
+                else:
+                    self.maskList[i].hide()
+        except Exception:
+            pass
+
+
     def updateComponents(self, i):
         # i is imageview/window number
         # component_index is the PCA component index
@@ -352,9 +403,9 @@ class FactorizationWidget(QSplitter):
             label.setText(name)
 
     def updateMap(self):
-        selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
         if hasattr(self, '_data_fac') and (self._data_fac is not None):
-            if len(self._dataRowSplit) < selectedMapIdx + 2:  # some maps are not included in the factorization calculation
+            if len(self._dataRowSplit) < self.selectMapIdx + 2:  # some maps are not included in the factorization calculation
                 msg.logMessage('One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
                     msg.ERROR)
             else:
@@ -364,7 +415,7 @@ class FactorizationWidget(QSplitter):
                     self.drawMap(component_index, i)
         else:  #clear maps
             for i in range(4):
-                img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
+                img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
                 getattr(self, self._imageDict[i]).setImage(img=img)
 
     def showComponents(self, fac_obj):
@@ -402,21 +453,16 @@ class FactorizationWidget(QSplitter):
 
     def drawMap(self, component_index, i):
         # i is imageview/window number
-        if self.selectionmodel.hasSelection():
-            selectedMapIdx = self.selectionmodel.selectedIndexes()[0].row()
-        else:
-            selectedMapIdx = 0
-
-        data_slice = self._data_fac[self._dataRowSplit[selectedMapIdx]:self._dataRowSplit[selectedMapIdx + 1],
+        data_slice = self._data_fac[self._dataRowSplit[self.selectMapIdx]:self._dataRowSplit[self.selectMapIdx + 1],
                      component_index - 1]
         # draw map
-        if self.selectedPixelsList[selectedMapIdx] is None:  # full map
-            img = data_slice.reshape(self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1])
-        elif self.selectedPixelsList[selectedMapIdx].size == 0:  # empty ROI
-            img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
+        if self.selectedPixelsList[self.selectMapIdx] is None:  # full map
+            img = data_slice.reshape(self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1])
+        elif self.selectedPixelsList[self.selectMapIdx].size == 0:  # empty ROI
+            img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
         else:
-            img = np.zeros((self.imgShapes[selectedMapIdx][0], self.imgShapes[selectedMapIdx][1]))
-            img[self.selectedPixelsList[selectedMapIdx][:, 0], self.selectedPixelsList[selectedMapIdx][:,
+            img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
+            img[self.selectedPixelsList[self.selectMapIdx][:, 0], self.selectedPixelsList[self.selectMapIdx][:,
                                                                1]] = data_slice
         img = np.flipud(img)
         getattr(self, self._imageDict[i]).setImage(img=img)
@@ -444,3 +490,6 @@ class FactorizationWidget(QSplitter):
             assert wavenum_align.count(wavenum_align[0]) == len(wavenum_align), 'Wavenumbers of all maps are not equal.'
 
         self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList, field=field)
+
+        #init maps
+

@@ -4,7 +4,6 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import pyqtgraph as pg
 import numpy as np
-import sys
 from xicam.core.data import NonDBHeader
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
@@ -17,7 +16,9 @@ from pyqtgraph.parametertree import ParameterTree, Parameter
 
 
 class MapView(QSplitter):
-    sigROIpixels = Signal(object)
+    sigRoiPixels = Signal(object)
+    sigRoiState = Signal(object)
+    sigMaskState = Signal(object)
 
     def __init__(self, header: NonDBHeader = None, field: str = 'primary', ):
         super(MapView, self).__init__()
@@ -80,27 +81,35 @@ class MapView(QSplitter):
         sideLen = 10
         self.roi = pg.PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
         self.imageview.view.addItem(self.roi)
-        self.roiState = self.roi.getState()
+        self.roiInitState = self.roi.getState()
         self.roi.hide()
 
         # Connect signals
         self.imageview.sigShowSpectra.connect(self.spectra.showSpectra)
         self.spectra.sigEnergyChanged.connect(self.imageview.setEnergy)
-        self.roiButton.clicked.connect(self.roiClicked)
+        self.roiButton.clicked.connect(self.roiBtnClicked)
         self.roi.sigRegionChangeFinished.connect(self.selectMapROI)
-        self.sigROIpixels.connect(self.spectra.getSelectedPixels)
+        self.sigRoiPixels.connect(self.spectra.getSelectedPixels)
         self.roiMeanButton.clicked.connect(self.spectra.showMeanSpectra)
         self.maskButton.clicked.connect(self.showAutoMask)
         self.parameter.child('Amide II').sigValueChanged.connect(self.showAutoMask)
 
-    def roiClicked(self):
+    def roiBtnClicked(self):
         if self.roiButton.isChecked():
             self.imageview.arrow.hide()
             self.roi.show()
+            self.sigRoiState.emit((True, self.roi.getState()))
         else:
             self.roi.hide()
-            self.roi.setState(self.roiState)
+            self.roi.setState(self.roiInitState)
+            self.sigRoiState.emit((False, self.roi.getState()))
         self.selectMapROI()
+
+    # TODO: load save roibtn, reverse roi
+
+    def roiMove(self, roi):
+        roiState = roi.getState()
+        self.roi.setState(roiState)
 
     def getImgShape(self, imgShape):
         self.row, self.col = imgShape[0], imgShape[1]
@@ -125,8 +134,10 @@ class MapView(QSplitter):
             # extract x,y coordinate from selected region
             selectedPixels = list(zip(yPos, xPos))
             self.intersectSelection('ROI', selectedPixels)
+            self.sigRoiState.emit((True, self.roi.getState()))
         else:
             self.intersectSelection('ROI', None) # no ROI, select all pixels
+            self.sigRoiState.emit((False, self.roi.getState()))
 
     def showAutoMask(self):
         if self.maskButton.isChecked():
@@ -138,16 +149,18 @@ class MapView(QSplitter):
             mask = self.mask.astype(np.bool)
             selectedPixels = list(zip(self.Y[mask], self.X[mask]))
             self.intersectSelection('Mask', selectedPixels)
+            self.sigMaskState.emit((True, self.mask))
         else:
             self.autoMask.hide()
             self.mask[:, :] = 1
             self.intersectSelection('Mask', None) # no mask, select all pixels
+            self.sigMaskState.emit((False, self.mask))
 
     def intersectSelection(self, selector, selectedPixels):
         # update pixel selection dict
         self.allSelection[selector] = selectedPixels
         if (self.allSelection['ROI'] is None) and (self.allSelection['Mask'] is None):
-            self.sigROIpixels.emit(None) # no ROI, select all pixels
+            self.sigRoiPixels.emit(None) # no ROI, select all pixels
             return
         elif self.allSelection['ROI'] is None:
             allSelected = set(self.allSelection['Mask']) #de-duplication of pixels
@@ -157,7 +170,7 @@ class MapView(QSplitter):
             allSelected = set(self.allSelection['ROI']) & set(self.allSelection['Mask'])
 
         allSelected = np.array(list(allSelected), dtype='int')  # convert to array
-        self.sigROIpixels.emit(allSelected)
+        self.sigRoiPixels.emit(allSelected)
 
 
 class BSISB(GUIPlugin):
@@ -202,15 +215,32 @@ class BSISB(GUIPlugin):
         # transmit imgshape to currentMapView
         currentMapView.getImgShape(imgShape)
         # get xy coordinates of ROI selected pixels
-        currentMapView.sigROIpixels.connect(self.appendPixelSelection)
+        currentMapView.sigRoiPixels.connect(partial(self.appendSelection, 'pixel'))
+        currentMapView.sigRoiState.connect(partial(self.appendSelection, 'ROI'))
+        currentMapView.sigMaskState.connect(partial(self.appendSelection, 'Mask'))
 
         self.PCA_widget.setHeader(field='spectra')
         self.NMF_widget.setHeader(field='volume')
-        # print(imgShape)
+        for i in range(4):
+            self.PCA_widget.roiList[i].sigRegionChangeFinished.connect(self.updateROI)
 
-    def appendPixelSelection(self, selectedPixels):
+    def appendSelection(self, sigCase, sigContent):
         # get current widget and append selectedPixels to item
         currentItemIdx = self.imageview.currentIndex()
-        self.headermodel.item(currentItemIdx).selectedPixels = selectedPixels
+        if sigCase == 'pixel':
+            self.headermodel.item(currentItemIdx).selectedPixels = sigContent
+        elif sigCase == 'ROI':
+            self.headermodel.item(currentItemIdx).roiState = sigContent
+            self.PCA_widget.updateRoiMask()
+            self.NMF_widget.updateRoiMask()
+        elif sigCase == 'Mask':
+            self.headermodel.item(currentItemIdx).maskState = sigContent
+            self.PCA_widget.updateRoiMask()
+            self.NMF_widget.updateRoiMask()
 
-        # print('map=',currentItemIdx,'\n',selectedPixels,'\n')
+    def updateROI(self, roi):
+        if self.selectionmodel.hasSelection():
+            selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        else:
+            selectMapIdx = 0
+        self.imageview.widget(selectMapIdx).roiMove(roi)
