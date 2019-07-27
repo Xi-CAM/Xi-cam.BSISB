@@ -2,4 +2,11 @@
 nose
 coverage
 pypi-publisher
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+scikit-learn
+umap-learn
 

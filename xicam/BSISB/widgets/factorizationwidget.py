@@ -7,7 +7,7 @@ from qtpy.QtGui import QStandardItemModel
 from functools import partial
 from qtpy.QtCore import Signal
 from sklearn.decomposition import PCA, NMF
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, Normalizer
 from umap import UMAP
 import numpy as np
 import pandas as pd
@@ -163,6 +163,7 @@ class FactorizationParameters(ParameterTree):
                     # mean center
                     ss = StandardScaler(with_std=False)
                     data_centered = ss.fit_transform(self._allData)
+                    data_centered = Normalizer().fit_transform(data_centered) # normalize data_centered
                     # Do PCA
                     self.PCA = PCA(n_components=N)
                     self.PCA.fit(data_centered)
@@ -358,7 +359,6 @@ class FactorizationWidget(QSplitter):
                     self.roiList[i].show()
                 else:
                     self.roiList[i].hide()
-                    self.roiList[i].setState(self.roiInitState)
                 # update roi state
                 self.roiList[i].blockSignals(True)
                 self.roiList[i].setState(roiState[1])
