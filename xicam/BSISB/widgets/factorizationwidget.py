@@ -302,6 +302,7 @@ class FactorizationWidget(QSplitter):
         sideLen = 10
         self.roiList = []
         self.maskList = []
+        self.selectMaskList = []
         self._imageDict = {0: 'NWimage', 1: 'NEimage', 2: 'SWimage', 3: 'SEimage'}
         for i in range(4):
             getattr(self, self._imageDict[i]).setPredefinedGradient("viridis")
@@ -317,8 +318,14 @@ class FactorizationWidget(QSplitter):
             maskItem = pg.ImageItem(np.ones((1,1)), axisOrder="row-major", autoLevels=True, opacity=0.3)
             maskItem.hide()
             self.maskList.append(maskItem)
+            # set up select mask item
+            selectMaskItem = pg.ImageItem(np.ones((1, 1)), axisOrder="row-major", autoLevels=True, opacity=0.3,
+                                          lut = np.array([[0, 0, 0], [255, 0, 0]]))
+            selectMaskItem.hide()
+            self.selectMaskList.append(selectMaskItem)
             getattr(self, self._imageDict[i]).view.addItem(roi)
             getattr(self, self._imageDict[i]).view.addItem(maskItem)
+            getattr(self, self._imageDict[i]).view.addItem(selectMaskItem)
 
         self.parametertree = FactorizationParameters(headermodel, selectionmodel)
         self.parameter = self.parametertree.parameter
@@ -377,6 +384,17 @@ class FactorizationWidget(QSplitter):
                     self.maskList[i].show()
                 else:
                     self.maskList[i].hide()
+        except Exception:
+            pass
+        # update selectMask
+        try:
+            selectMaskState = self.headermodel.item(self.selectMapIdx).selectState
+            for i in range(4):
+                self.selectMaskList[i].setImage(selectMaskState[1])
+                if selectMaskState[0]:  # roi on
+                    self.selectMaskList[i].show()
+                else:
+                    self.selectMaskList[i].hide()
         except Exception:
             pass
 

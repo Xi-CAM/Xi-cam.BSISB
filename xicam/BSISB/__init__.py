@@ -18,7 +18,8 @@ from pyqtgraph.parametertree import ParameterTree, Parameter
 class MapView(QSplitter):
     sigRoiPixels = Signal(object)
     sigRoiState = Signal(object)
-    sigMaskState = Signal(object)
+    sigAutoMaskState = Signal(object)
+    sigSelectMaskState = Signal(object)
 
     def __init__(self, header: NonDBHeader = None, field: str = 'primary', ):
         super(MapView, self).__init__()
@@ -37,17 +38,22 @@ class MapView(QSplitter):
         self.toolBar.setLayout(self.gridlayout)
         # self.toolBar.setOrientation(Qt.Vertical)
         #add tool bar buttons
-        self.roiButton = QToolButton()
-        self.roiButton.setText('manROI')
-        self.roiButton.setCheckable(True)
-        self.roiMeanButton = QToolButton()
-        self.roiMeanButton.setText('ROImean')
-        self.maskButton = QToolButton()
-        self.maskButton.setText('autoROI')
-        self.maskButton.setCheckable(True)
-        self.gridlayout.addWidget(self.roiButton, 0, 0, 1, 1)
-        self.gridlayout.addWidget(self.roiMeanButton, 1, 0, 1, 1)
-        self.gridlayout.addWidget(self.maskButton, 0, 1, 1, 1)
+        self.roiBtn = QToolButton()
+        self.roiBtn.setText('manROI')
+        self.roiBtn.setCheckable(True)
+        self.roiMeanBtn = QToolButton()
+        self.roiMeanBtn.setText('ROImean')
+        self.autoMaskBtn = QToolButton()
+        self.autoMaskBtn.setText('autoROI')
+        self.autoMaskBtn.setCheckable(True)
+        self.selectMaskBtn = QToolButton()
+        self.selectMaskBtn.setText('markSelect')
+        self.selectMaskBtn.setCheckable(True)
+        self.gridlayout.addWidget(self.roiBtn, 0, 0, 1, 1)
+        self.gridlayout.addWidget(self.autoMaskBtn, 0, 1, 1, 1)
+        self.gridlayout.addWidget(self.selectMaskBtn, 1, 0, 1, 1)
+        self.gridlayout.addWidget(self.roiMeanBtn, 1, 1, 1, 1)
+
 
         self.parameterTree = ParameterTree()
         self.parameter = Parameter(name='Threshhold', type='group',
@@ -87,15 +93,18 @@ class MapView(QSplitter):
         # Connect signals
         self.imageview.sigShowSpectra.connect(self.spectra.showSpectra)
         self.spectra.sigEnergyChanged.connect(self.imageview.setEnergy)
-        self.roiButton.clicked.connect(self.roiBtnClicked)
-        self.roi.sigRegionChangeFinished.connect(self.selectMapROI)
+        self.roiBtn.clicked.connect(self.roiBtnClicked)
+        self.roi.sigRegionChangeFinished.connect(self.roiSelectPixel)
+        self.roi.sigRegionChangeFinished.connect(self.showSelectMask)
         self.sigRoiPixels.connect(self.spectra.getSelectedPixels)
-        self.roiMeanButton.clicked.connect(self.spectra.showMeanSpectra)
-        self.maskButton.clicked.connect(self.showAutoMask)
+        self.roiMeanBtn.clicked.connect(self.spectra.showMeanSpectra)
+        self.autoMaskBtn.clicked.connect(self.showAutoMask)
+        self.selectMaskBtn.clicked.connect(self.showSelectMask)
         self.parameter.child('Amide II').sigValueChanged.connect(self.showAutoMask)
+        self.parameter.child('Amide II').sigValueChanged.connect(self.showSelectMask)
 
     def roiBtnClicked(self):
-        if self.roiButton.isChecked():
+        if self.roiBtn.isChecked():
             self.imageview.arrow.hide()
             self.roi.show()
             self.sigRoiState.emit((True, self.roi.getState()))
@@ -103,7 +112,7 @@ class MapView(QSplitter):
             self.roi.hide()
             self.roi.setState(self.roiInitState)
             self.sigRoiState.emit((False, self.roi.getState()))
-        self.selectMapROI()
+        self.roiSelectPixel()
 
     # TODO: load save roibtn, reverse roi
 
@@ -118,13 +127,19 @@ class MapView(QSplitter):
         y = np.linspace(self.row - 1, 0, self.row)
         self.X, self.Y = np.meshgrid(x, y)
         # setup automask item
-        self.mask = np.ones((self.row, self.col))
-        self.autoMask = pg.ImageItem(self.mask, axisOrder="row-major", autoLevels=True, opacity=0.3)
-        self.imageview.view.addItem(self.autoMask)
-        self.autoMask.hide()
+        self.autoMask = np.ones((self.row, self.col))
+        self.autoMaskItem = pg.ImageItem(self.autoMask, axisOrder="row-major", autoLevels=True, opacity=0.3)
+        self.imageview.view.addItem(self.autoMaskItem)
+        self.autoMaskItem.hide()
+        # setup selctmask item to mark selected pixels
+        self.selectMask = np.ones((self.row, self.col))
+        self.selectMaskItem = pg.ImageItem(self.selectMask, axisOrder="row-major", autoLevels=True, opacity=0.3,
+                                      lut = np.array([[0, 0, 0], [255, 0, 0]]))
+        self.imageview.view.addItem(self.selectMaskItem)
+        self.selectMaskItem.hide()
 
-    def selectMapROI(self):
-        if self.roiButton.isChecked():
+    def roiSelectPixel(self):
+        if self.roiBtn.isChecked():
             #get x,y positions list
             xPos = self.roi.getArrayRegion(self.X, self.imageview.imageItem)
             xPos = np.round(xPos[xPos > 0])
@@ -139,28 +154,39 @@ class MapView(QSplitter):
             self.intersectSelection('ROI', None) # no ROI, select all pixels
             self.sigRoiState.emit((False, self.roi.getState()))
 
-    def showAutoMask(self):
-        if self.maskButton.isChecked():
+    def showSelectMask(self):
+        if self.selectMaskBtn.isChecked():
             # update and show mask
-            self.mask = self.imageview.makeMask([self.parameter['Amide II']])
-            self.autoMask.setImage(self.mask)
-            self.autoMask.show()
+            self.selectMaskItem.setImage(self.selectMask)
+            self.selectMaskItem.show()
+            self.sigSelectMaskState.emit((True, self.selectMask))
+        else:
+            self.selectMaskItem.hide()
+            self.sigSelectMaskState.emit((False, self.selectMask))
+
+    def showAutoMask(self):
+        if self.autoMaskBtn.isChecked():
+            # update and show mask
+            self.autoMask = self.imageview.makeMask([self.parameter['Amide II']])
+            self.autoMaskItem.setImage(self.autoMask)
+            self.autoMaskItem.show()
             # select pixels
-            mask = self.mask.astype(np.bool)
+            mask = self.autoMask.astype(np.bool)
             selectedPixels = list(zip(self.Y[mask], self.X[mask]))
             self.intersectSelection('Mask', selectedPixels)
-            self.sigMaskState.emit((True, self.mask))
+            self.sigAutoMaskState.emit((True, self.autoMask))
         else:
-            self.autoMask.hide()
-            self.mask[:, :] = 1
+            self.autoMaskItem.hide()
+            self.autoMask[:, :] = 1
             self.intersectSelection('Mask', None) # no mask, select all pixels
-            self.sigMaskState.emit((False, self.mask))
+            self.sigAutoMaskState.emit((False, self.autoMask))
 
     def intersectSelection(self, selector, selectedPixels):
         # update pixel selection dict
         self.allSelection[selector] = selectedPixels
         if (self.allSelection['ROI'] is None) and (self.allSelection['Mask'] is None):
             self.sigRoiPixels.emit(None) # no ROI, select all pixels
+            self.selectMask = np.ones((self.row, self.col))
             return
         elif self.allSelection['ROI'] is None:
             allSelected = set(self.allSelection['Mask']) #de-duplication of pixels
@@ -170,6 +196,10 @@ class MapView(QSplitter):
             allSelected = set(self.allSelection['ROI']) & set(self.allSelection['Mask'])
 
         allSelected = np.array(list(allSelected), dtype='int')  # convert to array
+        self.selectMask = np.zeros((self.row, self.col))
+        if len(allSelected) > 0:
+            self.selectMask[allSelected[:, 0], allSelected[:, 1]] = 1
+            self.selectMask = np.flipud(self.selectMask)
         self.sigRoiPixels.emit(allSelected)
 
 
@@ -217,7 +247,8 @@ class BSISB(GUIPlugin):
         # get xy coordinates of ROI selected pixels
         currentMapView.sigRoiPixels.connect(partial(self.appendSelection, 'pixel'))
         currentMapView.sigRoiState.connect(partial(self.appendSelection, 'ROI'))
-        currentMapView.sigMaskState.connect(partial(self.appendSelection, 'Mask'))
+        currentMapView.sigAutoMaskState.connect(partial(self.appendSelection, 'autoMask'))
+        currentMapView.sigSelectMaskState.connect(partial(self.appendSelection, 'select'))
 
         self.PCA_widget.setHeader(field='spectra')
         self.NMF_widget.setHeader(field='volume')
@@ -233,10 +264,15 @@ class BSISB(GUIPlugin):
             self.headermodel.item(currentItemIdx).roiState = sigContent
             self.PCA_widget.updateRoiMask()
             self.NMF_widget.updateRoiMask()
-        elif sigCase == 'Mask':
+        elif sigCase == 'autoMask':
             self.headermodel.item(currentItemIdx).maskState = sigContent
             self.PCA_widget.updateRoiMask()
             self.NMF_widget.updateRoiMask()
+        elif sigCase == 'select':
+            self.headermodel.item(currentItemIdx).selectState = sigContent
+            self.PCA_widget.updateRoiMask()
+            self.NMF_widget.updateRoiMask()
+
 
     def updateROI(self, roi):
         if self.selectionmodel.hasSelection():
