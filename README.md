@@ -11,17 +11,18 @@ Overview
 
 Installation / Usage
 --------------------
+Install Xi-CAM:
 
-To install use pip:
-
-    $ pip install Xi-cam.plugins.BSISB
+Follow the guide [here](https://xi-cam2.readthedocs.io/en/latest/install.html)
 
 
-Or clone the repo:
+Clone the repo:
 
-    $ git clone 
-    $ python setup.py install
-    
+    $ git clone https://github.com/lchen23/Xi-cam.BSISB.git
+    $ cd Xi-CAM.BSISB
+    $ pip install -e .
+    $ cd .. 
+    $ xicam
 Contributing
 ------------
 
