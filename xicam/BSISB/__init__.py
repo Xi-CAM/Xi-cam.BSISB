@@ -4,6 +4,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import pyqtgraph as pg
 import numpy as np
+from time import sleep
 from xicam.core.data import NonDBHeader
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
@@ -220,8 +221,9 @@ class BSISB(GUIPlugin):
         self.headermodel.rowsRemoved.connect(partial(self.PCA_widget.setHeader, 'spectra'))
         self.headermodel.rowsRemoved.connect(partial(self.NMF_widget.setHeader, 'volume'))
 
-        # Setup tabviews
+        # Setup tabviews and update map selection
         self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')
+        self.imageview.currentChanged.connect(self.updateTab)
 
         self.stages = {"BSISB": GUILayout(self.imageview),
                        "PCA": GUILayout(self.PCA_widget),
@@ -236,6 +238,7 @@ class BSISB(GUIPlugin):
 
         self.headermodel.appendRow(item)
         self.headermodel.dataChanged.emit(QModelIndex(), QModelIndex())
+
         # read out image shape
         imageEvent = next(header.events(fields=['image']))
         imgShape = imageEvent['imgShape']
@@ -280,3 +283,8 @@ class BSISB(GUIPlugin):
         else:
             selectMapIdx = 0
         self.imageview.widget(selectMapIdx).roiMove(roi)
+
+    def updateTab(self, tabIdx):
+        if tabIdx >= 0:
+            self.selectionmodel.select(self.headermodel.index(tabIdx, 0), QItemSelectionModel.ClearAndSelect)
+

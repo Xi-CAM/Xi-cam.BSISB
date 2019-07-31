@@ -2,6 +2,7 @@
 nose
 coverage
 pypi-publisher
+h5py
 numpy
 pandas
 scipy

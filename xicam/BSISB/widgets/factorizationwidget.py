@@ -160,10 +160,9 @@ class FactorizationParameters(ParameterTree):
                 self.data_fac_name = 'data_PCA'
 
                 if len(self._allData) > 0:
-                    # mean center
-                    ss = StandardScaler(with_std=False)
-                    data_centered = ss.fit_transform(self._allData)
-                    data_centered = Normalizer().fit_transform(data_centered) # normalize data_centered
+                    # normalize and mean center
+                    data_norm = Normalizer().fit_transform(self._allData) # normalize
+                    data_centered = StandardScaler(with_std=False).fit_transform(data_norm)
                     # Do PCA
                     self.PCA = PCA(n_components=N)
                     self.PCA.fit(data_centered)
@@ -234,7 +233,7 @@ class FactorizationParameters(ParameterTree):
         labels = []
         for i in range(getattr(self, self.fac_method_name).components_.shape[0]):
             labels.append(self.fac_method_name + str(i + 1))
-            plt.plot(self.wavenumbers_select, getattr(self, self.fac_method_name).components_[i, :], '.',
+            plt.plot(self.wavenumbers_select, getattr(self, self.fac_method_name).components_[i, :], '-',
                      label=labels[i])
         loadings_legend = plt.legend(loc='best')
         plt.setp(loadings_legend, draggable=True)
@@ -358,6 +357,10 @@ class FactorizationWidget(QSplitter):
     def updateRoiMask(self):
         if self.selectionmodel.hasSelection():
             self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        elif self.headermodel.rowCount() > 0:
+            self.selectMapIdx = 0
+        else:
+            return
         # update roi
         try:
             roiState = self.headermodel.item(self.selectMapIdx).roiState
@@ -421,7 +424,13 @@ class FactorizationWidget(QSplitter):
             label.setText(name)
 
     def updateMap(self):
-        self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        if self.selectionmodel.hasSelection():
+            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        elif self.headermodel.rowCount() > 0:
+            self.selectMapIdx = 0
+        else:
+            return
+
         if hasattr(self, '_data_fac') and (self._data_fac is not None):
             if len(self._dataRowSplit) < self.selectMapIdx + 2:  # some maps are not included in the factorization calculation
                 msg.logMessage('One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
@@ -431,7 +440,7 @@ class FactorizationWidget(QSplitter):
                     component_index = self.parameter[f'Map {i + 1} Component Index']
                     # update map
                     self.drawMap(component_index, i)
-        else:  #clear maps
+        elif hasattr(self, 'imgShapes') and (self.selectMapIdx < len(self.imgShapes)):  #clear maps
             for i in range(4):
                 img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
                 getattr(self, self._imageDict[i]).setImage(img=img)
@@ -443,10 +452,6 @@ class FactorizationWidget(QSplitter):
         self.componentSpectra.clear()
         for sample, label in self._plotLegends.items[:]:
             self._plotLegends.removeItem(label.text)
-        #clear maps
-        for i in range(4):
-            img = np.zeros((self.imgShapes[0][0], self.imgShapes[0][1]))
-            getattr(self, self._imageDict[i]).setImage(img=img)
 
         self.wavenumbers, self._fac, self._data_fac, self._dataRowSplit = fac_obj[0], fac_obj[1], fac_obj[2], fac_obj[3]
 
@@ -464,6 +469,13 @@ class FactorizationWidget(QSplitter):
                 self._plots.append(tmp)
                 # show score plots
                 self.drawMap(component_index, i)
+        # clear maps
+        else:
+            tab_idx = self.headermodel.rowCount() - 1
+            if tab_idx >= 0:
+                for i in range(4):
+                    img = np.zeros((self.imgShapes[tab_idx][0], self.imgShapes[tab_idx][1]))
+                    getattr(self, self._imageDict[i]).setImage(img=img)
 
             # update the last image and loading plots as a recalculation complete signal
             N = self.parameter['Number of Components']
@@ -504,10 +516,14 @@ class FactorizationWidget(QSplitter):
             self.rc2indList.append(dataEvent['rc_index'])
             self.ind2rcList.append(dataEvent['index_rc'])
 
+        # init maps
+        if len(self.imgShapes) > 0:
+            self.showComponents((self.wavenumbers, None, None, None))
+
         if wavenum_align:
             assert wavenum_align.count(wavenum_align[0]) == len(wavenum_align), 'Wavenumbers of all maps are not equal.'
 
         self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList, field=field)
 
-        #init maps
+
 
