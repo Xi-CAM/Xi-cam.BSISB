@@ -60,7 +60,12 @@ class MapView(QSplitter):
         self.parameter = Parameter(name='Threshhold', type='group',
                                    children=[{'name': 'Amide II',
                                               'value': 0,
-                                              'type': 'float'}])
+                                              'type': 'float'},
+                                             {'name': "ROI type",
+                                              'values': ['+', '-'],
+                                              'value': '+',
+                                              'type': 'list'},
+                                             ])
         self.parameter.child('Amide II').setOpts(step=0.1)
         self.parameterTree.setParameters(self.parameter, showTop=False)
         self.parameterTree.setHeaderLabels(['Params','Value'])
@@ -82,7 +87,7 @@ class MapView(QSplitter):
         self.spectra.setHeader(header, field='spectra')
         self.header = header
         # init pixel selection dict
-        self.allSelection = {'ROI': None, 'Mask': None}
+        self.pixSelection = {'ROI': None, 'Mask': None}
 
         #setup ROI item
         sideLen = 10
@@ -102,7 +107,9 @@ class MapView(QSplitter):
         self.autoMaskBtn.clicked.connect(self.showAutoMask)
         self.selectMaskBtn.clicked.connect(self.showSelectMask)
         self.parameter.child('Amide II').sigValueChanged.connect(self.showAutoMask)
+        self.parameter.child('Amide II').sigValueChanged.connect(self.roiSelectPixel)
         self.parameter.child('Amide II').sigValueChanged.connect(self.showSelectMask)
+
 
     def roiBtnClicked(self):
         if self.roiBtn.isChecked():
@@ -127,6 +134,7 @@ class MapView(QSplitter):
         x = np.linspace(0, self.col - 1, self.col)
         y = np.linspace(self.row - 1, 0, self.row)
         self.X, self.Y = np.meshgrid(x, y)
+        self.fullMap = list(zip(self.Y.ravel(), self.X.ravel()))
         # setup automask item
         self.autoMask = np.ones((self.row, self.col))
         self.autoMaskItem = pg.ImageItem(self.autoMask, axisOrder="row-major", autoLevels=True, opacity=0.3)
@@ -184,17 +192,22 @@ class MapView(QSplitter):
 
     def intersectSelection(self, selector, selectedPixels):
         # update pixel selection dict
-        self.allSelection[selector] = selectedPixels
-        if (self.allSelection['ROI'] is None) and (self.allSelection['Mask'] is None):
+        self.pixSelection[selector] = selectedPixels
+        # reverse ROI selection
+        if (self.parameter['ROI type'] == '-') and (self.pixSelection['ROI'] is not None):
+            reverseROI = set(self.fullMap) - set(self.pixSelection['ROI'])
+            self.pixSelection['ROI'] = list(reverseROI)
+
+        if (self.pixSelection['ROI'] is None) and (self.pixSelection['Mask'] is None):
             self.sigRoiPixels.emit(None) # no ROI, select all pixels
             self.selectMask = np.ones((self.row, self.col))
             return
-        elif self.allSelection['ROI'] is None:
-            allSelected = set(self.allSelection['Mask']) #de-duplication of pixels
-        elif self.allSelection['Mask'] is None:
-            allSelected = set(self.allSelection['ROI']) #de-duplication of pixels
+        elif self.pixSelection['ROI'] is None:
+            allSelected = set(self.pixSelection['Mask']) #de-duplication of pixels
+        elif self.pixSelection['Mask'] is None:
+            allSelected = set(self.pixSelection['ROI']) #de-duplication of pixels
         else:
-            allSelected = set(self.allSelection['ROI']) & set(self.allSelection['Mask'])
+            allSelected = set(self.pixSelection['ROI']) & set(self.pixSelection['Mask'])
 
         allSelected = np.array(list(allSelected), dtype='int')  # convert to array
         self.selectMask = np.zeros((self.row, self.col))

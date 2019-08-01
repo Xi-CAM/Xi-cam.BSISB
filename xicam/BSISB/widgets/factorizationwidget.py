@@ -31,39 +31,44 @@ class FactorizationParameters(ParameterTree):
         self.selectionmodel = selectionmodel
 
         self.parameter = Parameter(name='params', type='group',
-                                   children=[{'name': "Number of Components",
+                                   children=[{'name': "# of Components",
                                               'value': 4,
                                               'type': 'int'},
                                              {'name': "Calculate",
                                               'type': 'action'},
-                                             {'name': "Map 1 Component Index",
+                                             {'name': "Map 1 Component",
                                               'values': [1, 2, 3, 4],
                                               'value': 1,
                                               'type': 'list'},
-                                             {'name': "Map 2 Component Index",
+                                             {'name': "Map 2 Component",
                                               'values': [1, 2, 3, 4],
                                               'value': 2,
                                               'type': 'list'},
-                                             {'name': "Map 3 Component Index",
+                                             {'name': "Map 3 Component",
                                               'values': [1, 2, 3, 4],
                                               'value': 3,
                                               'type': 'list'},
-                                             {'name': "Map 4 Component Index",
+                                             {'name': "Map 4 Component",
                                               'values': [1, 2, 3, 4],
                                               'value': 4,
                                               'type': 'list'},
-                                             {'name': "Save results",
-                                              'type': 'action'},
                                              {'name': "Wavenumber ROI",
-                                              'value': '800\n1800',
-                                              'type': 'text'}
+                                              'value': '800,1800',
+                                              'type': 'str'},
+                                             {'name': "Normalization",
+                                              'values': ['L2', 'L1', 'None'],
+                                              'value': 'L2',
+                                              'type': 'list'},
+                                             {'name': "Save results",
+                                              'type': 'action'}
                                              ])
 
         self.setParameters(self.parameter, showTop=False)
+        self.setIndentation(0)
 
         self.parameter.child('Calculate').sigActivated.connect(self.calculate)
         self.parameter.child('Save results').sigActivated.connect(self.saveResults)
-        self.parameter.child('Number of Components').sigValueChanged.connect(self.setNumComponents)
+        self.parameter.child('# of Components').sigValueChanged.connect(self.setNumComponents)
 
     def setHeader(self, wavenumbers, imgShapes, rc2indList, ind2rcList, field: str):
         # get all headers selected
@@ -89,6 +94,7 @@ class FactorizationParameters(ParameterTree):
                 if data is not None:
                     self._dataSets.append(data)
         elif field == 'volume':  # NMF workflow
+            self.parameter.child('Normalization').setValue('None')
             for header in self.headers:
                 volumeEvent = next(header.events(fields=['volume']))
                 # readin  filepath
@@ -96,19 +102,19 @@ class FactorizationParameters(ParameterTree):
                 self._dataSets.append(path)
 
     def setNumComponents(self):
-        N = self.parameter['Number of Components']
+        N = self.parameter['# of Components']
 
         for i in range(4):
-            param = self.parameter.child(f'Map {i + 1} Component Index')
+            param = self.parameter.child(f'Map {i + 1} Component')
             param.setLimits(list(range(1, N + 1)))
 
     def calculate(self):
 
-        N = self.parameter['Number of Components']
+        N = self.parameter['# of Components']
 
         if hasattr(self, '_dataSets'):
             wavROIList = []
-            for entry in self.parameter['Wavenumber ROI'].split('\n'):
+            for entry in self.parameter['Wavenumber ROI'].split(','):
                 try:
                     wavROIList.append(val2ind(int(entry), self.wavenumbers))
                 except:
@@ -161,7 +167,13 @@ class FactorizationParameters(ParameterTree):
 
                 if len(self._allData) > 0:
                     # normalize and mean center
-                    data_norm = Normalizer().fit_transform(self._allData) # normalize
+                    if self.parameter['Normalization'] == 'L1':# normalize
+                        data_norm = Normalizer(norm='l1').fit_transform(self._allData)
+                    elif self.parameter['Normalization'] == 'L2':
+                        data_norm = Normalizer(norm='l2').fit_transform(self._allData)
+                    else:
+                        data_norm = self._allData
+                    #subtract mean
                     data_centered = StandardScaler(with_std=False).fit_transform(data_norm)
                     # Do PCA
                     self.PCA = PCA(n_components=N)
@@ -330,7 +342,7 @@ class FactorizationWidget(QSplitter):
         self.parameter = self.parametertree.parameter
         self.parametertree.sigPCA.connect(self.showComponents)
         for i in range(4):
-            self.parameter.child(f'Map {i + 1} Component Index').sigValueChanged.connect(
+            self.parameter.child(f'Map {i + 1} Component').sigValueChanged.connect(
                 partial(self.updateComponents, i))
 
         self.addWidget(self.display)
@@ -405,7 +417,7 @@ class FactorizationWidget(QSplitter):
     def updateComponents(self, i):
         # i is imageview/window number
         # component_index is the PCA component index
-        component_index = self.parameter[f'Map {i + 1} Component Index']
+        component_index = self.parameter[f'Map {i + 1} Component']
         # update scoreplots on view i
         if hasattr(self, '_data_fac') and (self._data_fac is not None):
             # update map
@@ -437,7 +449,7 @@ class FactorizationWidget(QSplitter):
                     msg.ERROR)
             else:
                 for i in range(4):
-                    component_index = self.parameter[f'Map {i + 1} Component Index']
+                    component_index = self.parameter[f'Map {i + 1} Component']
                     # update map
                     self.drawMap(component_index, i)
         elif hasattr(self, 'imgShapes') and (self.selectMapIdx < len(self.imgShapes)):  #clear maps
@@ -458,7 +470,7 @@ class FactorizationWidget(QSplitter):
         if self._fac is not None:
             self._plots = []
             for i in range(4):
-                component_index = self.parameter[f'Map {i + 1} Component Index']
+                component_index = self.parameter[f'Map {i + 1} Component']
                 if self.field == 'spectra':
                     name = 'PCA' + str(component_index)
                 elif self.field == 'volume':
@@ -478,8 +490,8 @@ class FactorizationWidget(QSplitter):
                     getattr(self, self._imageDict[i]).setImage(img=img)
 
             # update the last image and loading plots as a recalculation complete signal
-            N = self.parameter['Number of Components']
-            self.parameter.child(f'Map 4 Component Index').setValue(N)
+            N = self.parameter['# of Components']
+            self.parameter.child(f'Map 4 Component').setValue(N)
 
     def drawMap(self, component_index, i):
         # i is imageview/window number
