@@ -4,8 +4,8 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import pyqtgraph as pg
 import numpy as np
-from time import sleep
 from xicam.core.data import NonDBHeader
+from xicam.BSISB.widgets.uiwidget import msgbox
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from xicam.BSISB.widgets.factorizationwidget import FactorizationWidget
@@ -107,11 +107,11 @@ class MapView(QSplitter):
         self.autoMaskBtn.clicked.connect(self.showAutoMask)
         self.selectMaskBtn.clicked.connect(self.showSelectMask)
         self.parameter.child('Amide II').sigValueChanged.connect(self.showAutoMask)
-        self.parameter.child('Amide II').sigValueChanged.connect(self.roiSelectPixel)
-        self.parameter.child('Amide II').sigValueChanged.connect(self.showSelectMask)
-
+        self.parameter.child('Amide II').sigValueChanged.connect(self.intersectSelection)
+        self.parameter.child('ROI type').sigValueChanged.connect(self.intersectSelection)
 
     def roiBtnClicked(self):
+        self.roiSelectPixel()
         if self.roiBtn.isChecked():
             self.imageview.arrow.hide()
             self.roi.show()
@@ -120,7 +120,7 @@ class MapView(QSplitter):
             self.roi.hide()
             self.roi.setState(self.roiInitState)
             self.sigRoiState.emit((False, self.roi.getState()))
-        self.roiSelectPixel()
+
 
     # TODO: load save roibtn, reverse roi
 
@@ -192,9 +192,11 @@ class MapView(QSplitter):
 
     def intersectSelection(self, selector, selectedPixels):
         # update pixel selection dict
-        self.pixSelection[selector] = selectedPixels
+        if (selector == 'ROI') or (selector == 'Mask'):
+            self.pixSelection[selector] = selectedPixels
         # reverse ROI selection
         if (self.parameter['ROI type'] == '-') and (self.pixSelection['ROI'] is not None):
+            roi_copy = self.pixSelection['ROI']
             reverseROI = set(self.fullMap) - set(self.pixSelection['ROI'])
             self.pixSelection['ROI'] = list(reverseROI)
 
@@ -215,6 +217,11 @@ class MapView(QSplitter):
             self.selectMask[allSelected[:, 0], allSelected[:, 1]] = 1
             self.selectMask = np.flipud(self.selectMask)
         self.sigRoiPixels.emit(allSelected)
+        # show SelectMask
+        self.showSelectMask()
+        #recover ROI selection
+        if (self.parameter['ROI type'] == '-') and (self.pixSelection['ROI'] is not None):
+             self.pixSelection['ROI'] = roi_copy
 
 
 class BSISB(GUIPlugin):
