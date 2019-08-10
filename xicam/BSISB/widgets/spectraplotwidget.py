@@ -1,4 +1,4 @@
-from pyqtgraph import PlotWidget, TextItem
+from pyqtgraph import PlotWidget, TextItem, PlotDataItem
 from xicam.core import msg
 from xicam.core.data import NonDBHeader
 import numpy as np
@@ -30,6 +30,7 @@ class SpectraPlotWidget(PlotWidget):
         if self._y is not None:
             x_val = lineobject.value()
             idx = val2ind(x_val, self.wavenumbers)
+            x_val = self.wavenumbers[idx]
             y_val = self._y[idx]
             if not self._meanSpec:
                 txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
@@ -103,6 +104,7 @@ class SpectraPlotWidget(PlotWidget):
             y_val = 0
         else:
             idx = val2ind(x_val, self.wavenumbers)
+            x_val = self.wavenumbers[idx]
             y_val = y[idx]
 
         if not self._meanSpec:

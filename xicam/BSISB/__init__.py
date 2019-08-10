@@ -5,7 +5,8 @@ from qtpy.QtWidgets import *
 import pyqtgraph as pg
 import numpy as np
 from xicam.core.data import NonDBHeader
-from xicam.BSISB.widgets.uiwidget import msgbox
+from xicam.BSISB.widgets.uiwidget import MsgBox
+from xicam.BSISB.widgets.mapconvertwidget import mapToH5
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from xicam.BSISB.widgets.factorizationwidget import FactorizationWidget
@@ -37,18 +38,17 @@ class MapView(QSplitter):
         self.toolBar = QWidget()
         self.gridlayout = QGridLayout()
         self.toolBar.setLayout(self.gridlayout)
-        # self.toolBar.setOrientation(Qt.Vertical)
         #add tool bar buttons
         self.roiBtn = QToolButton()
-        self.roiBtn.setText('manROI')
+        self.roiBtn.setText('Manual ROI')
         self.roiBtn.setCheckable(True)
         self.roiMeanBtn = QToolButton()
-        self.roiMeanBtn.setText('ROImean')
+        self.roiMeanBtn.setText('ROI Mean')
         self.autoMaskBtn = QToolButton()
-        self.autoMaskBtn.setText('autoROI')
+        self.autoMaskBtn.setText('Auto ROI')
         self.autoMaskBtn.setCheckable(True)
         self.selectMaskBtn = QToolButton()
-        self.selectMaskBtn.setText('markSelect')
+        self.selectMaskBtn.setText('Mark Select')
         self.selectMaskBtn.setCheckable(True)
         self.gridlayout.addWidget(self.roiBtn, 0, 0, 1, 1)
         self.gridlayout.addWidget(self.autoMaskBtn, 0, 1, 1, 1)
@@ -113,7 +113,7 @@ class MapView(QSplitter):
     def roiBtnClicked(self):
         self.roiSelectPixel()
         if self.roiBtn.isChecked():
-            self.imageview.arrow.hide()
+            self.imageview.cross.hide()
             self.roi.show()
             self.sigRoiState.emit((True, self.roi.getState()))
         else:
@@ -228,6 +228,8 @@ class BSISB(GUIPlugin):
     name = 'BSISB'
 
     def __init__(self, *args, **kwargs):
+
+        self.mapToH5 = mapToH5()
         # Data model
         self.headermodel = QStandardItemModel()
 
@@ -245,7 +247,8 @@ class BSISB(GUIPlugin):
         self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')
         self.imageview.currentChanged.connect(self.updateTab)
 
-        self.stages = {"BSISB": GUILayout(self.imageview),
+        self.stages = {"MapToH5": GUILayout(self.mapToH5),
+                       "Image View": GUILayout(self.imageview),
                        "PCA": GUILayout(self.PCA_widget),
                        "NMF": GUILayout(self.NMF_widget)}
         super(BSISB, self).__init__(*args, **kwargs)

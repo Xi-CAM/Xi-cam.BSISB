@@ -13,7 +13,7 @@ import pandas as pd
 import pyqtgraph as pg
 import matplotlib.pyplot as plt
 import seaborn as sns
-from xicam.BSISB.widgets.uiwidget import msgbox
+from xicam.BSISB.widgets.uiwidget import MsgBox
 from lbl_ir.data_objects.ir_map import val2ind
 from lbl_ir.tasks.preprocessing import data_prep
 from lbl_ir.tasks.NMF.multi_set_analyses import aggregate_data
@@ -127,7 +127,7 @@ class FactorizationParameters(ParameterTree):
                     wavROIidx += list(range(wavROIList[2 * i], wavROIList[2 * i + 1] + 1))
             else:
                 msg.logMessage('"Wavenumber ROI" values must be in pairs', msg.ERROR)
-                msgbox('Factorization computation aborted.','error')
+                MsgBox('Factorization computation aborted.', 'error')
                 return
 
             self.wavenumbers_select = self.wavenumbers[wavROIidx]
@@ -183,7 +183,7 @@ class FactorizationParameters(ParameterTree):
                     self.popup_plots()
                 else:
                     msg.logMessage('The data matrix is empty. No PCA is performed.', msg.ERROR)
-                    msgbox('The data matrix is empty. No PCA is performed.','error')
+                    MsgBox('The data matrix is empty. No PCA is performed.', 'error')
                     self.PCA, self.data_PCA = None, None
                 # emit PCA and transformed data : data_PCA
                 self.sigPCA.emit((self.wavenumbers_select, self.PCA, self.data_PCA, self.dataRowSplit))
@@ -236,7 +236,7 @@ class FactorizationParameters(ParameterTree):
                     self.popup_plots()
                 else:
                     msg.logMessage('The data matrix is empty. No NMF is performed.', msg.ERROR)
-                    msgbox('The data matrix is empty. No NMF is performed.','error')
+                    MsgBox('The data matrix is empty. No NMF is performed.', 'error')
                     self.NMF, self.data_NMF = None, None
                 # emit NMF and transformed data : data_NMF
                 self.sigPCA.emit((self.wavenumbers_select, self.NMF, self.data_NMF, self.dataRowSplit))
@@ -278,9 +278,9 @@ class FactorizationParameters(ParameterTree):
             df_fac_components.to_csv(name + '_components.csv')
             df_data_fac.to_csv(name + '_data.csv')
             np.savetxt(name + '_mapRowSplit.csv', np.array(self.dataRowSplit), fmt='%d', delimiter=',')
-            msgbox(name + ' components successfully saved!')
+            MsgBox(name + ' components successfully saved!')
         else:
-            msgbox('No factorization components available.')
+            MsgBox('No factorization components available.')
 
 
 class FactorizationWidget(QSplitter):
@@ -533,7 +533,8 @@ class FactorizationWidget(QSplitter):
             self.showComponents((self.wavenumbers, None, None, None))
 
         if wavenum_align and (wavenum_align.count(wavenum_align[0]) != len(wavenum_align)):
-            msgbox('Wavenumbers of all maps are not equal.','warn')
+            MsgBox('Length of wavenumber arrays of displayed maps are not equal. \n'
+                   'Perform PCA or NMF on these maps will lead to error.','warn')
 
         self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList, field=field)
 
