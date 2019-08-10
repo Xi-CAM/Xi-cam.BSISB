@@ -234,6 +234,7 @@ class mapToH5(QSplitter):
                 except Exception as error:
                     MsgBox(error.args[0], 'error')
                     break
+            QApplication.processEvents()
         MsgBox('All file conversion complete!')
 
 class BatchMapConverter(QThread):
