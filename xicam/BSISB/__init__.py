@@ -1,11 +1,13 @@
+import os
 from functools import partial
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
+import pickle
 import pyqtgraph as pg
 import numpy as np
 from xicam.core.data import NonDBHeader
-from xicam.BSISB.widgets.uiwidget import MsgBox
+from xicam.BSISB.widgets.uiwidget import MsgBox, uiSaveFile, uiGetFile
 from xicam.BSISB.widgets.mapconvertwidget import mapToH5
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
@@ -50,11 +52,18 @@ class MapView(QSplitter):
         self.selectMaskBtn = QToolButton()
         self.selectMaskBtn.setText('Mark Select')
         self.selectMaskBtn.setCheckable(True)
+        self.saveRoiBtn = QToolButton()
+        self.saveRoiBtn.setText('Save ROI')
+        self.saveRoiBtn.setCheckable(False)
+        self.loadRoiBtn = QToolButton()
+        self.loadRoiBtn.setText('Load ROI')
+        self.loadRoiBtn.setCheckable(False)
         self.gridlayout.addWidget(self.roiBtn, 0, 0, 1, 1)
         self.gridlayout.addWidget(self.autoMaskBtn, 0, 1, 1, 1)
         self.gridlayout.addWidget(self.selectMaskBtn, 1, 0, 1, 1)
         self.gridlayout.addWidget(self.roiMeanBtn, 1, 1, 1, 1)
-
+        self.gridlayout.addWidget(self.saveRoiBtn, 2, 0, 1, 1)
+        self.gridlayout.addWidget(self.loadRoiBtn, 2, 1, 1, 1)
 
         self.parameterTree = ParameterTree()
         self.parameter = Parameter(name='Threshhold', type='group',
@@ -96,6 +105,9 @@ class MapView(QSplitter):
         self.roiInitState = self.roi.getState()
         self.roi.hide()
 
+        #constants
+        self.path = os.path.expanduser('~/')
+
         # Connect signals
         self.imageview.sigShowSpectra.connect(self.spectra.showSpectra)
         self.spectra.sigEnergyChanged.connect(self.imageview.setEnergy)
@@ -106,6 +118,8 @@ class MapView(QSplitter):
         self.roiMeanBtn.clicked.connect(self.spectra.showMeanSpectra)
         self.autoMaskBtn.clicked.connect(self.showAutoMask)
         self.selectMaskBtn.clicked.connect(self.showSelectMask)
+        self.saveRoiBtn.clicked.connect(self.saveRoi)
+        self.loadRoiBtn.clicked.connect(self.loadRoi)
         self.parameter.child('Amide II').sigValueChanged.connect(self.showAutoMask)
         self.parameter.child('Amide II').sigValueChanged.connect(self.intersectSelection)
         self.parameter.child('ROI type').sigValueChanged.connect(self.intersectSelection)
@@ -121,8 +135,32 @@ class MapView(QSplitter):
             self.roi.setState(self.roiInitState)
             self.sigRoiState.emit((False, self.roi.getState()))
 
+    def saveRoi(self):
+        parameterDict = {name: self.parameter[name] for name in self.parameter.names.keys()}
+        roiStates = {'roiBtn': self.roiBtn.isChecked(), 'maskBtn': self.autoMaskBtn.isChecked(),
+                    'roiState': self.roi.getState(), 'parameter': parameterDict}
+        filePath, fileName, canceled = uiSaveFile('Save ROI state', self.path, "Pickle Files (*.pkl)")
+        if not canceled:
+            with open(filePath + fileName, 'wb') as f:
+                pickle.dump(roiStates, f)
+            MsgBox(f'ROI state file was saved! \nFile Location: {filePath + fileName}')
 
-    # TODO: load save roibtn, reverse roi
+    def loadRoi(self):
+        filePath, fileName, canceled = uiGetFile('Open ROI state file', self.path, "Pickle Files (*.pkl)")
+        if not canceled:
+            with open(filePath + fileName, 'rb') as f:
+                roiStates = pickle.load(f)
+            self.roiBtn.setChecked(roiStates['roiBtn'])
+            self.roi.setState(roiStates['roiState'])
+            if roiStates['roiBtn']:
+                self.roi.show()
+            self.autoMaskBtn.setChecked(roiStates['maskBtn'])
+            self.selectMaskBtn.setChecked(True)
+            for k, v in roiStates['parameter'].items():
+                self.parameter[k] = v
+            MsgBox(f'ROI states were loaded from: \n{filePath + fileName}')
+        else:
+            return
 
     def roiMove(self, roi):
         roiState = roi.getState()

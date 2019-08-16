@@ -4,7 +4,7 @@ import numpy as np
 from glob import glob
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
-from xicam.BSISB.widgets.uiwidget import MsgBox, YesNoDialog, uiGetFile, uiGetDir
+from xicam.BSISB.widgets.uiwidget import MsgBox, YesNoDialog, uiGetFile, uiGetDir, uiSaveFile
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 
@@ -132,7 +132,7 @@ class mapToH5(QSplitter):
         self.imageview.setImage(img=dataCube)
 
     def saveBtnClicked(self):
-        if hasattr(self, 'ir_map') and (self.filePath != ''):
+        if hasattr(self, 'irMap') and (self.filePath != ''):
             h5Name = self.fileName[:-4] + '.h5'
             try:
                 self.irMap.write_as_hdf5(self.filePath + h5Name)
@@ -140,8 +140,12 @@ class mapToH5(QSplitter):
                 self.infoBox.setText(f'HDF5 File Location: {self.filePath + h5Name}')
             except Exception as error:
                 MsgBox(error.args[0], 'error')
-                saveFilePath, saveFileName, canceled = uiGetFile('Save HDF5 file', self.path, "HDF5 Files (*.h5)")
+                saveFilePath, saveFileName, canceled = uiSaveFile('Save HDF5 file', self.path, "HDF5 Files (*.h5)")
                 if not canceled:
+                    # make sure the saveFileName end with .h5
+                    if not saveFileName.endswith('h5'):
+                        saveFileName = saveFileName.split('.')[0] + '.h5'
+                    # save file
                     try:
                         self.irMap.write_as_hdf5(saveFilePath + saveFileName)
                         MsgBox(f'Map to HDF5 conversion complete! \nFile Location: {saveFilePath + saveFileName}')
@@ -167,7 +171,7 @@ class mapToH5(QSplitter):
             self.infoBox.setText('No .map file was found in the selected folder.')
             return
 
-        # #try to use thread
+        #try to use thread
         # mapConverter = BatchMapConverter(self.T2AConvert.isChecked(), self.sampleName.text(),\
         #                                  self.epsilon, self.minYLimit, filePaths)
         # mapConverter.sigText.connect(lambda x:self.infoBox.setText(x))
@@ -315,6 +319,6 @@ class BatchMapConverter(QThread):
                     MsgBox(error.args[0], 'error')
                     break
             # QTimer.singleShot(0, lambda: self.infoBox.setText(f'Start processing #{i + 1} out of {n_files} files.'))
-        MsgBox('All file conversion complete!')
-        self.terminate()
+        # MsgBox('All file conversion complete!')
+        self.quit()
 
