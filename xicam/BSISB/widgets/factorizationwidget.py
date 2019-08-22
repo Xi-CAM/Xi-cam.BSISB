@@ -6,7 +6,7 @@ from qtpy.QtCore import Qt, QItemSelectionModel
 from qtpy.QtGui import QStandardItemModel
 from functools import partial
 from qtpy.QtCore import Signal
-from sklearn.decomposition import PCA, NMF
+from sklearn.decomposition import PCA, NMF, FastICA
 from sklearn.preprocessing import StandardScaler, Normalizer
 import numpy as np
 import pandas as pd
@@ -31,7 +31,11 @@ class FactorizationParameters(ParameterTree):
         self.selectionmodel = selectionmodel
 
         self.parameter = Parameter(name='params', type='group',
-                                   children=[{'name': "# of Components",
+                                   children=[{'name': "Method",
+                                              'values': ['PCA', 'NMF', 'MCR'],
+                                              'value': 'PCA',
+                                              'type': 'list'},
+                                             {'name': "# of Components",
                                               'value': 4,
                                               'type': 'int'},
                                              {'name': "Calculate",
@@ -65,10 +69,26 @@ class FactorizationParameters(ParameterTree):
 
         self.setParameters(self.parameter, showTop=False)
         self.setIndentation(0)
+        #constants
+        self.method = 'PCA'
 
         self.parameter.child('Calculate').sigActivated.connect(self.calculate)
         self.parameter.child('Save results').sigActivated.connect(self.saveResults)
         self.parameter.child('# of Components').sigValueChanged.connect(self.setNumComponents)
+        self.parameter.child('Method').sigValueChanged.connect(self.setMethod)
+
+    def setMethod(self):
+        if self.parameter['Method'] == 'PCA':
+            self.method = 'PCA'
+            self.field = 'spectra'
+        elif self.parameter['Method'] == 'NMF':
+            self.method = 'NMF'
+            self.field = 'volume'
+            self.parameter.child('Normalization').setValue('None')
+        elif self.parameter['Method'] == 'MCR':
+            self.method = 'MCR'
+            self.field = 'spectra'
+            self.parameter.child('Normalization').setValue('None')
 
     def setHeader(self, wavenumbers, imgShapes, rc2indList, ind2rcList, field: str):
         # get all headers selected
@@ -81,25 +101,20 @@ class FactorizationParameters(ParameterTree):
         self.imgShapes = imgShapes
         self.rc2indList = rc2indList
         self.ind2rcList = ind2rcList
-        self._dataSets = []
+        self._dataSets = {'spectra': [], 'volume': []}
 
-        if field == 'spectra':  # PCA workflow
-            for header in self.headers:
-                data = None
-                try:
-                    data = header.meta_array(self.field)
-                except IndexError:
-                    msg.logMessage('Header object contained no frames with field ''{field}''.', msg.ERROR)
-
-                if data is not None:
-                    self._dataSets.append(data)
-        elif field == 'volume':  # NMF workflow
-            self.parameter.child('Normalization').setValue('None')
-            for header in self.headers:
-                volumeEvent = next(header.events(fields=['volume']))
-                # readin  filepath
-                path = volumeEvent['path']
-                self._dataSets.append(path)
+        for header in self.headers:
+            data = None
+            try:  # spectra datasets
+                data = header.meta_array('spectra')
+            except IndexError:
+                msg.logMessage('Header object contained no frames with field ''{field}''.', msg.ERROR)
+            if data is not None:
+                self._dataSets['spectra'].append(data)
+            # NMF path sets
+            volumeEvent = next(header.events(fields=['volume']))
+            path = volumeEvent['path'] # readin  filepath
+            self._dataSets['volume'].append(path)
 
     def setNumComponents(self):
         N = self.parameter['# of Components']
@@ -143,7 +158,7 @@ class FactorizationParameters(ParameterTree):
                 self._allData = np.empty((0, self.N_w))
                 print(self.imgShapes)
 
-                for i, data in enumerate(self._dataSets):  # i: map idx
+                for i, data in enumerate(self._dataSets['spectra']):  # i: map idx
                     if self.selectedPixelsList[i] is None:
                         n_spectra = len(data)
                         tmp = np.zeros((n_spectra, self.N_w))
@@ -161,32 +176,41 @@ class FactorizationParameters(ParameterTree):
                     self.dataRowSplit.append(self.dataRowSplit[-1] + n_spectra)
                     self._allData = np.append(self._allData, tmp, axis=0)
 
-                # define pop up plots labels
-                self.fac_method_name = 'PCA'
-                self.data_fac_name = 'data_PCA'
-
                 if len(self._allData) > 0:
-                    # normalize and mean center
-                    if self.parameter['Normalization'] == 'L1':# normalize
-                        data_norm = Normalizer(norm='l1').fit_transform(self._allData)
-                    elif self.parameter['Normalization'] == 'L2':
-                        data_norm = Normalizer(norm='l2').fit_transform(self._allData)
-                    else:
-                        data_norm = self._allData
-                    #subtract mean
-                    data_centered = StandardScaler(with_std=False).fit_transform(data_norm)
-                    # Do PCA
-                    self.PCA = PCA(n_components=N)
-                    self.PCA.fit(data_centered)
-                    self.data_PCA = self.PCA.transform(data_centered)
-                    # pop up plots
-                    self.popup_plots()
+                    if self.method == 'PCA':
+                        self.data_fac_name = 'data_PCA' # define pop up plots labels
+                        # normalize and mean center
+                        if self.parameter['Normalization'] == 'L1':# normalize
+                            data_norm = Normalizer(norm='l1').fit_transform(self._allData)
+                        elif self.parameter['Normalization'] == 'L2':
+                            data_norm = Normalizer(norm='l2').fit_transform(self._allData)
+                        else:
+                            data_norm = self._allData
+                        #subtract mean
+                        data_centered = StandardScaler(with_std=False).fit_transform(data_norm)
+                        # Do PCA
+                        self.PCA = PCA(n_components=N)
+                        self.PCA.fit(data_centered)
+                        self.data_PCA = self.PCA.transform(data_centered)
+                        # pop up plots
+                        self.popup_plots()
+                    elif self.method == 'MCR':
+                        self.data_fac_name = 'data_MCR'  # define pop up plots labels
+                        # Do MCR
+                        self.MCR = FastICA(n_components=N)
+                        self.data_MCR = self.MCR.fit_transform(self._allData)
+                        # pop up plots
+                        self.popup_plots()
                 else:
                     msg.logMessage('The data matrix is empty. No PCA is performed.', msg.ERROR)
                     MsgBox('The data matrix is empty. No PCA is performed.', 'error')
                     self.PCA, self.data_PCA = None, None
-                # emit PCA and transformed data : data_PCA
-                self.sigPCA.emit((self.wavenumbers_select, self.PCA, self.data_PCA, self.dataRowSplit))
+                    self.MCR, self.data_MCR = None, None
+                # emit PCA and transformed data
+                if self.method == 'PCA':
+                    self.sigPCA.emit((self.wavenumbers_select, self.PCA, self.data_PCA, self.dataRowSplit))
+                elif self.method == 'MCR':
+                    self.sigPCA.emit((self.wavenumbers_select, self.MCR, self.data_MCR, self.dataRowSplit))
 
             elif self.field == 'volume':  # NMF workflow
                 data_files = []
@@ -195,7 +219,7 @@ class FactorizationParameters(ParameterTree):
                 self.allDataRowSplit = [0]  # row split for complete datasets
                 print(self.imgShapes)
 
-                for i, file in enumerate(self._dataSets):
+                for i, file in enumerate(self._dataSets['volume']):
                     ir_data, fmt = read_map.read_all_formats(file)
                     n_spectra = ir_data.data.shape[0]
                     self.allDataRowSplit.append(self.allDataRowSplit[-1] + n_spectra)
@@ -218,20 +242,18 @@ class FactorizationParameters(ParameterTree):
                     self.dataRowSplit.append(self.dataRowSplit[-1] + n_spectra)  # row split for ROI selected rows
 
                 # define pop up plots labels
-                self.fac_method_name = 'NMF'
                 self.data_fac_name = 'data_NMF'
 
                 if len(self.df_row_idx) > 0:
                     # aggregate datasets
-                    ir_data_agg = aggregate_data(self._dataSets, data_files, wav_masks)
+                    ir_data_agg = aggregate_data(self._dataSets['volume'], data_files, wav_masks)
                     col_idx = list(set(wavROIidx) & set(ir_data_agg.master_wmask))
                     self.wavenumbers_select = self.wavenumbers[col_idx]
                     ir_data_agg.data = ir_data_agg.data[:, col_idx]
                     ir_data_agg.data = ir_data_agg.data[row_idx, :]
                     # perform NMF
-                    NMF_obj = NMF(n_components=N)
-                    self.data_NMF = NMF_obj.fit_transform(ir_data_agg.data)
-                    self.NMF = NMF_obj
+                    self.NMF = NMF(n_components=N)
+                    self.data_NMF = self.NMF.fit_transform(ir_data_agg.data)
                     # pop up plots
                     self.popup_plots()
                 else:
@@ -243,9 +265,9 @@ class FactorizationParameters(ParameterTree):
 
     def popup_plots(self):
         labels = []
-        for i in range(getattr(self, self.fac_method_name).components_.shape[0]):
-            labels.append(self.fac_method_name + str(i + 1))
-            plt.plot(self.wavenumbers_select, getattr(self, self.fac_method_name).components_[i, :], '-',
+        for i in range(getattr(self, self.method).components_.shape[0]):
+            labels.append(self.method + str(i + 1))
+            plt.plot(self.wavenumbers_select, getattr(self, self.method).components_[i, :], '-',
                      label=labels[i])
         loadings_legend = plt.legend(loc='best')
         plt.setp(loadings_legend, draggable=True)
@@ -271,8 +293,9 @@ class FactorizationParameters(ParameterTree):
         plt.show()
 
     def saveResults(self):
-        if (hasattr(self, 'PCA') and self.PCA is not None) or (hasattr(self, 'NMF') and self.NMF is not None):
-            name = self.fac_method_name
+        if (hasattr(self, 'PCA') and self.PCA is not None) or (hasattr(self, 'NMF') and self.NMF is not None)\
+                or (hasattr(self, 'MCR') and self.MCR is not None):
+            name = self.method
             df_fac_components = pd.DataFrame(getattr(self, name).components_, columns=self.wavenumbers_select)
             df_data_fac = pd.DataFrame(getattr(self, self.data_fac_name), index=self.df_row_idx)
             df_fac_components.to_csv(name + '_components.csv')
@@ -426,10 +449,7 @@ class FactorizationWidget(QSplitter):
         # update PCA components
         if hasattr(self, '_plots'):
             # update plots
-            if self.field == 'spectra':
-                name = 'PCA' + str(component_index)
-            elif self.field == 'volume':
-                name = 'NMF' + str(component_index)
+            name = self.parameter['Method'] + str(component_index)
             self._plots[i].setData(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name)
             # update legend label
             sample, label = self._plotLegends.items[i]
@@ -471,10 +491,7 @@ class FactorizationWidget(QSplitter):
             self._plots = []
             for i in range(4):
                 component_index = self.parameter[f'Map {i + 1} Component']
-                if self.field == 'spectra':
-                    name = 'PCA' + str(component_index)
-                elif self.field == 'volume':
-                    name = 'NMF' + str(component_index)
+                name = self.parameter['Method'] + str(component_index)
                 # show loading plots
                 tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name,
                                                  pen=mkPen(self._colors[i], width=2))

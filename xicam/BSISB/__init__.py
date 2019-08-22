@@ -95,8 +95,6 @@ class MapView(QSplitter):
         self.imageview.setHeader(header, field='image')
         self.spectra.setHeader(header, field='spectra')
         self.header = header
-        # init pixel selection dict
-        self.pixSelection = {'ROI': None, 'Mask': None}
 
         #setup ROI item
         sideLen = 10
@@ -107,6 +105,7 @@ class MapView(QSplitter):
 
         #constants
         self.path = os.path.expanduser('~/')
+        self.pixSelection = {'ROI': None, 'Mask': None} # init pixel selection dict
 
         # Connect signals
         self.imageview.sigShowSpectra.connect(self.spectra.showSpectra)
@@ -274,12 +273,12 @@ class BSISB(GUIPlugin):
         # Selection model
         self.selectionmodel = QItemSelectionModel(self.headermodel)
 
-        self.PCA_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
-        self.NMF_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
+        self.FA_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
+        # self.NMF_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
 
         # update headers list when a tab window is closed
-        self.headermodel.rowsRemoved.connect(partial(self.PCA_widget.setHeader, 'spectra'))
-        self.headermodel.rowsRemoved.connect(partial(self.NMF_widget.setHeader, 'volume'))
+        self.headermodel.rowsRemoved.connect(partial(self.FA_widget.setHeader, 'spectra'))
+        # self.headermodel.rowsRemoved.connect(partial(self.NMF_widget.setHeader, 'volume'))
 
         # Setup tabviews and update map selection
         self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')
@@ -287,8 +286,8 @@ class BSISB(GUIPlugin):
 
         self.stages = {"MapToH5": GUILayout(self.mapToH5),
                        "Image View": GUILayout(self.imageview),
-                       "PCA": GUILayout(self.PCA_widget),
-                       "NMF": GUILayout(self.NMF_widget)}
+                       "Factor Analysis": GUILayout(self.FA_widget)}
+                       # "NMF": GUILayout(self.NMF_widget)}
         super(BSISB, self).__init__(*args, **kwargs)
 
     def appendHeader(self, header: NonDBHeader, **kwargs):
@@ -314,10 +313,10 @@ class BSISB(GUIPlugin):
         currentMapView.sigAutoMaskState.connect(partial(self.appendSelection, 'autoMask'))
         currentMapView.sigSelectMaskState.connect(partial(self.appendSelection, 'select'))
 
-        self.PCA_widget.setHeader(field='spectra')
-        self.NMF_widget.setHeader(field='volume')
+        self.FA_widget.setHeader(field='spectra')
+        # self.NMF_widget.setHeader(field='volume')
         for i in range(4):
-            self.PCA_widget.roiList[i].sigRegionChangeFinished.connect(self.updateROI)
+            self.FA_widget.roiList[i].sigRegionChangeFinished.connect(self.updateROI)
 
     def appendSelection(self, sigCase, sigContent):
         # get current widget and append selectedPixels to item
@@ -326,16 +325,16 @@ class BSISB(GUIPlugin):
             self.headermodel.item(currentItemIdx).selectedPixels = sigContent
         elif sigCase == 'ROI':
             self.headermodel.item(currentItemIdx).roiState = sigContent
-            self.PCA_widget.updateRoiMask()
-            self.NMF_widget.updateRoiMask()
+            self.FA_widget.updateRoiMask()
+            # self.NMF_widget.updateRoiMask()
         elif sigCase == 'autoMask':
             self.headermodel.item(currentItemIdx).maskState = sigContent
-            self.PCA_widget.updateRoiMask()
-            self.NMF_widget.updateRoiMask()
+            self.FA_widget.updateRoiMask()
+            # self.NMF_widget.updateRoiMask()
         elif sigCase == 'select':
             self.headermodel.item(currentItemIdx).selectState = sigContent
-            self.PCA_widget.updateRoiMask()
-            self.NMF_widget.updateRoiMask()
+            self.FA_widget.updateRoiMask()
+            # self.NMF_widget.updateRoiMask()
 
 
     def updateROI(self, roi):
