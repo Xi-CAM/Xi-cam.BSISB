@@ -6,6 +6,7 @@ from qtpy.QtCore import Qt, QItemSelectionModel
 from qtpy.QtGui import QStandardItemModel
 from functools import partial
 from qtpy.QtCore import Signal
+from pymcr.mcr import McrAR
 from sklearn.decomposition import PCA, NMF, FastICA
 from sklearn.preprocessing import StandardScaler, Normalizer
 import numpy as np
@@ -63,6 +64,10 @@ class FactorizationParameters(ParameterTree):
                                               'values': ['L2', 'L1', 'None'],
                                               'value': 'L2',
                                               'type': 'list'},
+                                             {'name': "C regressor",
+                                              'values': ['OLS', 'NNLS'],
+                                              'value': 'OLS',
+                                              'type': 'list'},
                                              {'name': "Save results",
                                               'type': 'action'}
                                              ])
@@ -71,31 +76,37 @@ class FactorizationParameters(ParameterTree):
         self.setIndentation(0)
         #constants
         self.method = 'PCA'
+        self.field = 'spectra'
 
         self.parameter.child('Calculate').sigActivated.connect(self.calculate)
         self.parameter.child('Save results').sigActivated.connect(self.saveResults)
         self.parameter.child('# of Components').sigValueChanged.connect(self.setNumComponents)
         self.parameter.child('Method').sigValueChanged.connect(self.setMethod)
+        self.parameter.child('C regressor').hide()
 
     def setMethod(self):
         if self.parameter['Method'] == 'PCA':
             self.method = 'PCA'
             self.field = 'spectra'
+            self.parameter.child('Normalization').setToDefault()
+            self.parameter.child('Normalization').show()
+            self.parameter.child('C regressor').hide()
         elif self.parameter['Method'] == 'NMF':
             self.method = 'NMF'
             self.field = 'volume'
-            self.parameter.child('Normalization').setValue('None')
+            self.parameter.child('Normalization').hide()
+            self.parameter.child('C regressor').hide()
         elif self.parameter['Method'] == 'MCR':
             self.method = 'MCR'
             self.field = 'spectra'
-            self.parameter.child('Normalization').setValue('None')
+            self.parameter.child('Normalization').hide()
+            self.parameter.child('C regressor').show()
 
-    def setHeader(self, wavenumbers, imgShapes, rc2indList, ind2rcList, field: str):
+    def setHeader(self, wavenumbers, imgShapes, rc2indList, ind2rcList):
         # get all headers selected
         # headers = [self.headermodel.itemFromIndex(i).header for i in self.selectionmodel.selectedRows()]
         self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
 
-        self.field = field
         self.wavenumbers = wavenumbers
         self.N_w = len(self.wavenumbers)
         self.imgShapes = imgShapes
@@ -113,7 +124,7 @@ class FactorizationParameters(ParameterTree):
                 self._dataSets['spectra'].append(data)
             # NMF path sets
             volumeEvent = next(header.events(fields=['volume']))
-            path = volumeEvent['path'] # readin  filepath
+            path = volumeEvent['path'] # readin filepath
             self._dataSets['volume'].append(path)
 
     def setNumComponents(self):
@@ -196,9 +207,15 @@ class FactorizationParameters(ParameterTree):
                         self.popup_plots()
                     elif self.method == 'MCR':
                         self.data_fac_name = 'data_MCR'  # define pop up plots labels
+                        # Do ICA to find initial estimate of ST matrix
+                        self.ICA = FastICA(n_components=N)
+                        self.ICA.fit(self._allData)
                         # Do MCR
-                        self.MCR = FastICA(n_components=N)
-                        self.data_MCR = self.MCR.fit_transform(self._allData)
+                        self.MCR = McrAR(max_iter=100, c_regr=self.parameter['C regressor'], st_regr='NNLS',
+                                         tol_err_change=1e-6, tol_increase=0.5)
+                        self.MCR.fit(self._allData, ST=self.ICA.components_)
+                        self.MCR.components_ = self.MCR.ST_opt_
+                        self.data_MCR = self.MCR.C_opt_
                         # pop up plots
                         self.popup_plots()
                 else:
@@ -553,7 +570,7 @@ class FactorizationWidget(QSplitter):
             MsgBox('Length of wavenumber arrays of displayed maps are not equal. \n'
                    'Perform PCA or NMF on these maps will lead to error.','warn')
 
-        self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList, field=field)
+        self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList)
 
 
 

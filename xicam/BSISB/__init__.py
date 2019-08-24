@@ -155,6 +155,7 @@ class MapView(QSplitter):
                 self.roi.show()
             self.autoMaskBtn.setChecked(roiStates['maskBtn'])
             self.selectMaskBtn.setChecked(True)
+            self.showSelectMask()
             for k, v in roiStates['parameter'].items():
                 self.parameter[k] = v
             MsgBox(f'ROI states were loaded from: \n{filePath + fileName}')
@@ -274,11 +275,9 @@ class BSISB(GUIPlugin):
         self.selectionmodel = QItemSelectionModel(self.headermodel)
 
         self.FA_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
-        # self.NMF_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
 
         # update headers list when a tab window is closed
         self.headermodel.rowsRemoved.connect(partial(self.FA_widget.setHeader, 'spectra'))
-        # self.headermodel.rowsRemoved.connect(partial(self.NMF_widget.setHeader, 'volume'))
 
         # Setup tabviews and update map selection
         self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')
@@ -314,7 +313,6 @@ class BSISB(GUIPlugin):
         currentMapView.sigSelectMaskState.connect(partial(self.appendSelection, 'select'))
 
         self.FA_widget.setHeader(field='spectra')
-        # self.NMF_widget.setHeader(field='volume')
         for i in range(4):
             self.FA_widget.roiList[i].sigRegionChangeFinished.connect(self.updateROI)
 
@@ -326,16 +324,12 @@ class BSISB(GUIPlugin):
         elif sigCase == 'ROI':
             self.headermodel.item(currentItemIdx).roiState = sigContent
             self.FA_widget.updateRoiMask()
-            # self.NMF_widget.updateRoiMask()
         elif sigCase == 'autoMask':
             self.headermodel.item(currentItemIdx).maskState = sigContent
             self.FA_widget.updateRoiMask()
-            # self.NMF_widget.updateRoiMask()
         elif sigCase == 'select':
             self.headermodel.item(currentItemIdx).selectState = sigContent
             self.FA_widget.updateRoiMask()
-            # self.NMF_widget.updateRoiMask()
-
 
     def updateROI(self, roi):
         if self.selectionmodel.hasSelection():
