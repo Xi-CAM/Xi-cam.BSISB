@@ -18,10 +18,14 @@ class SpectraPlotWidget(PlotWidget):
         self._meanSpec = True # whether current spectrum is a mean spectrum
         self.line = InfiniteLine(movable=True)
         self.line.setPen((255, 255, 0, 200))
-        self.line.setZValue(100)
+        self.line.setValue(650)
         self.line.sigPositionChanged.connect(self.sigEnergyChanged)
         self.line.sigPositionChanged.connect(self.getEnergy)
         self.addItem(self.line)
+        self.cross = PlotDataItem([650], [0], symbolBrush=(255, 0, 0), symbolPen=(255, 0, 0), symbol='+',
+                                  symbolSize=20)
+        self.cross.setZValue(100)
+        self.addItem(self.cross)
         self.getViewBox().invertX(True)
         self.selectedPixels = None
         self._y = None
@@ -42,6 +46,7 @@ class SpectraPlotWidget(PlotWidget):
             txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
                                  X = {x_val: .2f}, Y = {y_val: .4f}</div>'
             self.txt.setHtml(txt_html)
+            self.cross.setData([x_val], [y_val])
 
     def setHeader(self, header: NonDBHeader, field: str, *args, **kwargs):
         self.header = header
@@ -99,6 +104,7 @@ class SpectraPlotWidget(PlotWidget):
         # set up infinity line and get its position
         self.plotItem.plot(x, y, *args, **kwargs)
         self.addItem(self.line)
+        self.addItem(self.cross)
         x_val = self.line.value()
         if x_val == 0:
             y_val = 0
@@ -120,4 +126,5 @@ class SpectraPlotWidget(PlotWidget):
         ymax = max(y)
         self._y = y
         self.txt.setPos(1500, 0.95 * ymax)
+        self.cross.setData([x_val], [y_val])
         self.addItem(self.txt)

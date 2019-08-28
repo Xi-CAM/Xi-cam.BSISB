@@ -14,12 +14,8 @@ class MapViewWidget(DynImageView):
         # self.scene.sigMouseMoved.connect(self.showSpectra)
         self.scene.sigMouseClicked.connect(self.showSpectra)
         self.view.invertY(True)
-
         # add arrow
-        # self.arrow = ArrowItem(angle=60, headLen=15, tipAngle=45, baseAngle=30, brush = (200, 80, 20))
-        # self.arrow.setPos(0, 0)
         self.cross = PlotDataItem([0], [0], symbolBrush=(200, 0, 0), symbolPen=(200, 0, 0), symbol='+', symbolSize=16)
-
         self.view.addItem(self.cross)
         self.cross.hide()
         #add txt

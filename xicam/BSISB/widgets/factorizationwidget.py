@@ -1,7 +1,7 @@
 from qtpy.QtWidgets import QSplitter, QGridLayout, QWidget, QListView
 from xicam.core import msg
 from xicam.gui.widgets.imageviewmixins import BetterButtons
-from pyqtgraph import PlotWidget, mkPen
+from pyqtgraph import PlotWidget, PlotDataItem, TextItem, mkPen, InfiniteLine, ImageItem, PolyLineROI
 from qtpy.QtCore import Qt, QItemSelectionModel
 from qtpy.QtGui import QStandardItemModel
 from functools import partial
@@ -216,6 +216,9 @@ class FactorizationParameters(ParameterTree):
                         self.MCR.fit(self._allData, ST=self.ICA.components_)
                         self.MCR.components_ = self.MCR.ST_opt_
                         self.data_MCR = self.MCR.C_opt_
+                        #test ICA
+                        # self.MCR = self.ICA
+                        # self.data_MCR = self.ICA.transform(self._allData)
                         # pop up plots
                         self.popup_plots()
                 else:
@@ -322,6 +325,52 @@ class FactorizationParameters(ParameterTree):
         else:
             MsgBox('No factorization components available.')
 
+class ComponentPlotWidget(PlotWidget):
+    def __init__(self, *args, **kwargs):
+        super(ComponentPlotWidget, self).__init__(*args, **kwargs)
+        self.line = InfiniteLine(pos=800, movable=True)
+        self.line.sigPositionChanged.connect(self.getEnergy)
+        self.addItem(self.line)
+        self.cross = PlotDataItem([800], [0], symbolBrush=(255, 255, 255), symbolPen=(255, 255, 255), symbol='+', symbolSize=20)
+        self.addItem(self.cross)
+        self.txt = TextItem()
+        self.getViewBox().invertX(True)
+        self._x, self._y = None, None
+        self.ymax, self.zmax = 0, 100
+
+    def getEnergy(self):
+        if self._y is not None:
+            x_val = self.line.value()
+            idx = val2ind(x_val, self._x)
+            x_val = self._x[idx]
+            y_val = self._y[idx]
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                                 X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+            self.txt.setHtml(txt_html)
+            self.cross.setData([x_val], [y_val])
+
+    def plot(self, x, y, *args, **kwargs):
+        # set up infinity line and get its position
+        plot_item = self.plotItem.plot(x, y, *args, **kwargs)
+        self.addItem(self.line)
+        self.addItem(self.cross)
+        x_val = self.line.value()
+        idx = val2ind(x_val, x)
+        x_val = x[idx]
+        y_val = y[idx]
+        txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                     X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+        self.txt.setHtml(txt_html)
+        self.txt.setZValue(self.zmax - 1)
+        self.cross.setData([x_val], [y_val])
+        self.cross.setZValue(self.zmax)
+        ymax = max(y)
+        if ymax > self.ymax:
+            self.ymax = ymax
+        self._x, self._y = x, y
+        self.txt.setPos(1200, 0.95 * self.ymax)
+        self.addItem(self.txt)
+        return plot_item
 
 class FactorizationWidget(QSplitter):
     def __init__(self, headermodel, selectionmodel):
@@ -339,10 +388,10 @@ class FactorizationWidget(QSplitter):
         self.gridwidget.setLayout(self.gridlayout)
         self.display = QSplitter()
 
-        self.componentSpectra = PlotWidget()
+        # self.componentSpectra = PlotWidget()
+        self.componentSpectra = ComponentPlotWidget()
         self._plotLegends = self.componentSpectra.addLegend()
         self._colors = ['r', 'g', 'b', 'y', 'c', 'm', 'w']  # color for plots
-        self.componentSpectra.getViewBox().invertX(True)
 
         # self.spectraROI = PlotWidget()
         self.NWimage = BetterButtons()
@@ -361,22 +410,25 @@ class FactorizationWidget(QSplitter):
             getattr(self, self._imageDict[i]).view.invertY(True)
             getattr(self, self._imageDict[i]).imageItem.setOpts(axisOrder="row-major")
             # set up roi item
-            roi = pg.PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
+            roi = PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
             roi.hide()
             self.roiInitState = roi.getState()
             self.roiList.append(roi)
             # set up mask item
-            maskItem = pg.ImageItem(np.ones((1,1)), axisOrder="row-major", autoLevels=True, opacity=0.3)
+            maskItem = ImageItem(np.ones((1,1)), axisOrder="row-major", autoLevels=True, opacity=0.3)
             maskItem.hide()
             self.maskList.append(maskItem)
             # set up select mask item
-            selectMaskItem = pg.ImageItem(np.ones((1, 1)), axisOrder="row-major", autoLevels=True, opacity=0.3,
+            selectMaskItem = ImageItem(np.ones((1, 1)), axisOrder="row-major", autoLevels=True, opacity=0.3,
                                           lut = np.array([[0, 0, 0], [255, 0, 0]]))
             selectMaskItem.hide()
             self.selectMaskList.append(selectMaskItem)
+            # set up image title
+            getattr(self, self._imageDict[i]).imageTitle = TextItem()
             getattr(self, self._imageDict[i]).view.addItem(roi)
             getattr(self, self._imageDict[i]).view.addItem(maskItem)
             getattr(self, self._imageDict[i]).view.addItem(selectMaskItem)
+            getattr(self, self._imageDict[i]).view.addItem(getattr(self, self._imageDict[i]).imageTitle)
 
         self.parametertree = FactorizationParameters(headermodel, selectionmodel)
         self.parameter = self.parametertree.parameter
@@ -453,7 +505,6 @@ class FactorizationWidget(QSplitter):
         except Exception:
             pass
 
-
     def updateComponents(self, i):
         # i is imageview/window number
         # component_index is the PCA component index
@@ -498,7 +549,8 @@ class FactorizationWidget(QSplitter):
         # get map ROI selected region
         self.selectedPixelsList = [self.headermodel.item(i).selectedPixels for i in range(self.headermodel.rowCount())]
         # clear plots and legends
-        self.componentSpectra.clear()
+        self.componentSpectra.plotItem.clearPlots()
+        self.componentSpectra.ymax = 0
         for sample, label in self._plotLegends.items[:]:
             self._plotLegends.removeItem(label.text)
 
@@ -512,9 +564,14 @@ class FactorizationWidget(QSplitter):
                 # show loading plots
                 tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name,
                                                  pen=mkPen(self._colors[i], width=2))
+                tmp.curve.setClickable(True)
+                tmp.curve.sigClicked.connect(partial(self.curveHighLight, i))
                 self._plots.append(tmp)
                 # show score plots
                 self.drawMap(component_index, i)
+            # update the last image and loading plots as a recalculation complete signal
+            N = self.parameter['# of Components']
+            self.parameter.child(f'Map 4 Component').setValue(N)
         # clear maps
         else:
             tab_idx = self.headermodel.rowCount() - 1
@@ -522,10 +579,6 @@ class FactorizationWidget(QSplitter):
                 for i in range(4):
                     img = np.zeros((self.imgShapes[tab_idx][0], self.imgShapes[tab_idx][1]))
                     getattr(self, self._imageDict[i]).setImage(img=img)
-
-            # update the last image and loading plots as a recalculation complete signal
-            N = self.parameter['# of Components']
-            self.parameter.child(f'Map 4 Component').setValue(N)
 
     def drawMap(self, component_index, i):
         # i is imageview/window number
@@ -542,6 +595,20 @@ class FactorizationWidget(QSplitter):
                                                                1]] = data_slice
         img = np.flipud(img)
         getattr(self, self._imageDict[i]).setImage(img=img)
+        # set imageTitle
+        imageTitle = getattr(self, self._imageDict[i]).imageTitle
+        title = self.parameter['Method'] + str(component_index)
+        imageTitle.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 8pt">{title}</div>')
+        imageTitle.setPos(0, -5)
+
+    def curveHighLight(self, k):
+        for i in range(4):
+            if i == k:
+                self._plots[i].setPen(mkPen(self._colors[k], width=6))
+            else:
+                self._plots[i].setPen(mkPen(self._colors[i], width=2))
+        self.componentSpectra._x, self.componentSpectra._y = self._plots[k].getData()
+        self.componentSpectra.getEnergy()
 
     def setHeader(self, field: str):
 
