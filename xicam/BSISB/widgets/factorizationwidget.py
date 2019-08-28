@@ -70,6 +70,8 @@ class FactorizationParameters(ParameterTree):
         self.parameter.child('Save results').sigActivated.connect(self.saveResults)
         self.parameter.child('# of Components').sigValueChanged.connect(self.setNumComponents)
 
+        # self.headermodel.datachanged.connect(self.setHeader())
+
     def setHeader(self, wavenumbers, imgShapes, rc2indList, ind2rcList, field: str):
         # get all headers selected
         # headers = [self.headermodel.itemFromIndex(i).header for i in self.selectionmodel.selectedRows()]
