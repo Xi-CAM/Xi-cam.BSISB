@@ -25,12 +25,11 @@ class MapViewWidget(DynImageView):
     def setEnergy(self, lineobject):
         E = lineobject.value()
         # map E to index
-        i = val2ind(E, self.wavenumbers)
-        # print('E:', E, 'wav:', self.wavenumbers[i])
-        self.setCurrentIndex(i)
+        idx = val2ind(E, self.wavenumbers)
+        self._image = self._data[idx]
+        self.setCurrentIndex(idx)
 
     def showSpectra(self, event):
-
         pos = event.pos()
         if self.view.sceneBoundingRect().contains(pos):  # Note, when axes are added, you must get the view with self.view.getViewBox()
             mousePoint = self.view.mapSceneToView(pos)
@@ -40,14 +39,14 @@ class MapViewWidget(DynImageView):
                 ind = self.rc2ind[(y,x)]
                 self.sigShowSpectra.emit(ind)
                 # print(x, y, ind, x + y * self.n_col)
-
-                #update arrow
+                #update crosshair
                 self.cross.setData([x + 0.5], [self.row - y - 0.5])
                 self.cross.show()
                 # update text
-                self.txt.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 8pt">X: {x}</div>\
+                self.txt.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 8pt">Point: #{ind}</div>\
+            <div style="text-align: center"><span style="color: #FFF; font-size: 8pt">X: {x}</div>\
             <div style="text-align: center"><span style="color: #FFF; font-size: 8pt">Y: {y}</div>\
-            <div style="text-align: center"><span style="color: #FFF; font-size: 8pt">Point: #{ind}</div>')
+            <div style="text-align: center"><span style="color: #FFF; font-size: 8pt">Val: {self._image[self.row - y -1, x]: .4f}</div>')
             except Exception:
                 self.cross.hide()
 
@@ -73,6 +72,7 @@ class MapViewWidget(DynImageView):
             # kwargs['transform'] = QTransform(1, 0, 0, -1, 0, data.shape[-2])
             self.setImage(img=data, *args, **kwargs)
             self._data = data
+            self._image = self._data[0]
 
     def updateImage(self, autoHistogramRange=True):
         super(MapViewWidget, self).updateImage(autoHistogramRange)
