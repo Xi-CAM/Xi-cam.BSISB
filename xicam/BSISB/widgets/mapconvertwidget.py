@@ -7,7 +7,6 @@ from qtpy.QtWidgets import *
 from xicam.BSISB.widgets.uiwidget import MsgBox, YesNoDialog, uiGetFile, uiGetDir, uiSaveFile
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
-
 from lbl_ir.data_objects import ir_map
 from lbl_ir.io_tools.read_omnic import read_and_convert
 
@@ -129,6 +128,8 @@ class mapToH5(QSplitter):
         self.imageview.row, self.imageview.col = row, col
         self.imageview.wavenumbers = wavenumbers
         self.imageview.rc2ind = rc2ind
+        self.imageview._data = dataCube
+        self.imageview._image = self.imageview._data[0]
         self.imageview.setImage(img=dataCube)
 
     def saveBtnClicked(self):

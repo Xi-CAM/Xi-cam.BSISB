@@ -27,6 +27,7 @@ class SpectraPlotWidget(PlotWidget):
         self.cross.setZValue(100)
         self.addItem(self.cross)
         self.getViewBox().invertX(True)
+        self.spectrumInd = 0
         self.selectedPixels = None
         self._y = None
 

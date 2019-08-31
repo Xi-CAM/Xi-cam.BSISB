@@ -5,6 +5,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import pickle
 import pyqtgraph as pg
+from pyqtgraph.parametertree import ParameterTree, Parameter
 import numpy as np
 from xicam.core.data import NonDBHeader
 from xicam.BSISB.widgets.uiwidget import MsgBox, uiSaveFile, uiGetFile
@@ -12,12 +13,8 @@ from xicam.BSISB.widgets.mapconvertwidget import mapToH5
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from xicam.BSISB.widgets.factorizationwidget import FactorizationWidget
-
 from xicam.plugins import GUIPlugin, GUILayout
 from xicam.gui.widgets.tabview import TabView
-from pyqtgraph.parametertree import ParameterTree, Parameter
-
-
 
 class MapView(QSplitter):
     sigRoiPixels = Signal(object)
