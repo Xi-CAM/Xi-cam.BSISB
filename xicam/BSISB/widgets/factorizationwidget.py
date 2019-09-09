@@ -162,12 +162,11 @@ class FactorizationParameters(ParameterTree):
                                        range(self.headermodel.rowCount())]
             self.df_row_idx = []  # row index for dataframe data_fac
 
-            print('Start computing factorization ...')
+            msg.showMessage('Start computing', self.method + '. Image shape:', str(self.imgShapes))
             self.dataRowSplit = [0]  # remember the starting/end row positions of each dataset
             if self.field == 'spectra':  # PCA workflow
                 self.N_w = len(self.wavenumbers_select)
                 self._allData = np.empty((0, self.N_w))
-                print(self.imgShapes)
 
                 for i, data in enumerate(self._dataSets['spectra']):  # i: map idx
                     if self.selectedPixelsList[i] is None:
@@ -237,7 +236,6 @@ class FactorizationParameters(ParameterTree):
                 wav_masks = []
                 row_idx = np.array([], dtype='int')
                 self.allDataRowSplit = [0]  # row split for complete datasets
-                print(self.imgShapes)
 
                 for i, file in enumerate(self._dataSets['volume']):
                     ir_data, fmt = read_map.read_all_formats(file)

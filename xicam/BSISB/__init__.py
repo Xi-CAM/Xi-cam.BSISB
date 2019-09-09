@@ -7,6 +7,7 @@ import pickle
 import pyqtgraph as pg
 from pyqtgraph.parametertree import ParameterTree, Parameter
 import numpy as np
+from xicam.core import msg
 from xicam.core.data import NonDBHeader
 from xicam.BSISB.widgets.uiwidget import MsgBox, uiSaveFile, uiGetFile
 from xicam.BSISB.widgets.mapconvertwidget import mapToH5
@@ -287,8 +288,11 @@ class BSISB(GUIPlugin):
         super(BSISB, self).__init__(*args, **kwargs)
 
     def appendHeader(self, header: NonDBHeader, **kwargs):
+        # get fileName and update status bar
+        fileName = header.startdoc.get('sample_name', '????')
+        msg.showMessage(f'Opening {fileName}.h5')
         # init item
-        item = QStandardItem(header.startdoc.get('sample_name', '????') + '_' + str(self.headermodel.rowCount()))
+        item = QStandardItem(fileName + '_' + str(self.headermodel.rowCount()))
         item.header = header
         item.selectedPixels = None
 
