@@ -8,7 +8,7 @@ from xicam.BSISB.widgets.uiwidget import MsgBox, YesNoDialog, uiGetFile, uiGetDi
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from lbl_ir.data_objects import ir_map
-from lbl_ir.io_tools.read_omnic import read_and_convert
+from lbl_ir.io_tools.read_omnic import read_and_convert, read_npy
 
 class mapToH5(QSplitter):
     def __init__(self):
@@ -33,8 +33,10 @@ class mapToH5(QSplitter):
         self.info.layout().addWidget(QLabel('Status Info:'))
         self.info.layout().addWidget(self.infoBox)
         # add tool bar buttons
-        self.openBtn = QToolButton()
-        self.openBtn.setText('Open Map')
+        self.openMapBtn = QToolButton()
+        self.openMapBtn.setText('Open Map')
+        self.openNpyBtn = QToolButton()
+        self.openNpyBtn.setText('Open Npy')
         self.saveBtn = QToolButton()
         self.saveBtn.setText('Save HDF5')
         self.batchBtn = QToolButton()
@@ -46,7 +48,8 @@ class mapToH5(QSplitter):
         self.T2AConvert.setText('Auto T->A')
         self.T2AConvert.setChecked(True)
         # Assemble widgets
-        self.toollayout.addWidget(self.openBtn)
+        self.toollayout.addWidget(self.openMapBtn)
+        self.toollayout.addWidget(self.openNpyBtn)
         self.toollayout.addWidget(self.saveBtn)
         self.toollayout.addWidget(self.batchBtn)
         self.toollayout.addWidget(QLabel('Sample Name:'))
@@ -66,19 +69,29 @@ class mapToH5(QSplitter):
         # Connect signals
         self.imageview.sigShowSpectra.connect(self.spectra.showSpectra)
         self.spectra.sigEnergyChanged.connect(self.imageview.setEnergy)
-        self.openBtn.clicked.connect(self.openBtnClicked)
+        self.openMapBtn.clicked.connect(self.openBtnClicked)
+        self.openNpyBtn.clicked.connect(self.openNpy)
         self.saveBtn.clicked.connect(self.saveBtnClicked)
         self.batchBtn.clicked.connect(self.batchBtnClicked)
         # Constants
         self.path = os.path.dirname(sys.path[1])
         self.minYLimit = 5
         self.epsilon = 1e-10
+        self.fileFormat = 'map'
+
+    def openNpy(self):
+        self.fileFormat = 'npy'
+        self.T2AConvert.setChecked(True)
+        self.openBtnClicked()
 
     def openBtnClicked(self):
         # open omnic map file
-        self.filePath, self.fileName, canceled = uiGetFile('Open map file', self.path, "Omnic Map Files (*.map)")
+        if self.fileFormat == 'map':
+            self.filePath, self.fileName, canceled = uiGetFile('Open map file', self.path, "Omnic Map Files (*.map)")
+        elif self.fileFormat == 'npy':
+            self.filePath, self.fileName, canceled = uiGetFile('Open npy file', self.path, "Numpy array Files (*.npy)")
         if canceled:
-            self.infoBox.setText('Open map canceled.')
+            self.infoBox.setText('Open file canceled.')
             return
         # set sample_id
         if self.sampleName.text() == 'None':
@@ -87,31 +100,35 @@ class mapToH5(QSplitter):
             sample_info = ir_map.sample_info(sample_id=self.sampleName.text())
         #try to open omnic map file
         try:
-            self.irMap = read_and_convert(self.filePath + self.fileName, sample_info=sample_info)
+            if self.fileFormat == 'map':
+                self.irMap = read_and_convert(self.filePath + self.fileName, sample_info=sample_info)
+            elif self.fileFormat == 'npy':
+                self.irMap = read_npy(self.filePath + self.fileName, sample_info=sample_info)
         except Exception as error:
             self.infoBox.setText(error.args[0] + f'\nFailed to open file: {self.fileName}.')
         else:
-            # check whether to perform T->A conversion
-            spec0 = self.irMap.imageCube[0, 0, :]
-            maxSpecY = np.max(spec0)
-            if (not self.T2AConvert.isChecked()) and (maxSpecY >= self.minYLimit):
-                userMsg = YesNoDialog(f'max(Y) of the first spectrum is greater than {self.minYLimit}, \
-                while the "Auto T->A" box is not checked. \nPlease make sure data format is in absorbance.\
-                \nDo you want to perform "Auto T->A" conversion?')
-                userChoice = userMsg.choice()
-                if userChoice == QMessageBox.Yes:
-                    self.T2AConvert.setChecked(True)
+            if self.fileFormat == 'map':
+                # check whether to perform T->A conversion
+                spec0 = self.irMap.imageCube[0, 0, :]
+                maxSpecY = np.max(spec0)
+                if (not self.T2AConvert.isChecked()) and (maxSpecY >= self.minYLimit):
+                    userMsg = YesNoDialog(f'max(Y) of the first spectrum is greater than {self.minYLimit}, \
+                    while the "Auto T->A" box is not checked. \nPlease make sure data format is in absorbance.\
+                    \nDo you want to perform "Auto T->A" conversion?')
+                    userChoice = userMsg.choice()
+                    if userChoice == QMessageBox.Yes:
+                        self.T2AConvert.setChecked(True)
+                        self.irMap.imageCube = -np.log10(self.irMap.imageCube / 100 + self.epsilon)
+                        self.irMap.data = -np.log10(self.irMap.data / 100 + self.epsilon)
+                        self.infoBox.setText(f'User chooses to perform T->A conversion in {self.fileName}.')
+                    else:
+                        self.infoBox.setText(f'User chooses not to perform T->A conversion in {self.fileName}.')
+                elif maxSpecY >= self.minYLimit:
                     self.irMap.imageCube = -np.log10(self.irMap.imageCube / 100 + self.epsilon)
                     self.irMap.data = -np.log10(self.irMap.data / 100 + self.epsilon)
-                    self.infoBox.setText(f'User chooses to perform T->A conversion in {self.fileName}.')
+                    self.infoBox.setText(f'T->A conversion is performed in {self.fileName}.')
                 else:
-                    self.infoBox.setText(f'User chooses not to perform T->A conversion in {self.fileName}.')
-            elif maxSpecY >= self.minYLimit:
-                self.irMap.imageCube = -np.log10(self.irMap.imageCube / 100 + self.epsilon)
-                self.irMap.data = -np.log10(self.irMap.data / 100 + self.epsilon)
-                self.infoBox.setText(f'T->A conversion is performed in {self.fileName}.')
-            else:
-                self.infoBox.setText(f"{self.fileName}'s datatype is absorbance. \nT->A conversion is not performed.")
+                    self.infoBox.setText(f"{self.fileName}'s datatype is absorbance. \nT->A conversion is not performed.")
 
             self.dataCube = np.moveaxis(np.flipud(self.irMap.imageCube), -1, 0)
             # set up required data/properties in self.imageview
