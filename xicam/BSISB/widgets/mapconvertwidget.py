@@ -81,8 +81,9 @@ class mapToH5(QSplitter):
 
     def openNpy(self):
         self.fileFormat = 'npy'
-        self.T2AConvert.setChecked(True)
+        self.T2AConvert.setChecked(False)
         self.openBtnClicked()
+        self.fileFormat = 'map'
 
     def openBtnClicked(self):
         # open omnic map file
@@ -90,6 +91,7 @@ class mapToH5(QSplitter):
             self.filePath, self.fileName, canceled = uiGetFile('Open map file', self.path, "Omnic Map Files (*.map)")
         elif self.fileFormat == 'npy':
             self.filePath, self.fileName, canceled = uiGetFile('Open npy file', self.path, "Numpy array Files (*.npy)")
+
         if canceled:
             self.infoBox.setText('Open file canceled.')
             return
