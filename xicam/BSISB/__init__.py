@@ -11,8 +11,9 @@ from xicam.core import msg
 from xicam.core.data import NonDBHeader
 from xicam.BSISB.widgets.uiwidget import MsgBox, uiSaveFile, uiGetFile
 from xicam.BSISB.widgets.mapconvertwidget import mapToH5
+from xicam.BSISB.widgets.xasimagewidget import xasImageView
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
-from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
+from xicam.BSISB.widgets.xasimagewidget import xasSpectraWidget
 from xicam.BSISB.widgets.factorizationwidget import FactorizationWidget
 from xicam.plugins import GUIPlugin, GUILayout
 from xicam.gui.widgets.tabview import TabView
@@ -28,7 +29,7 @@ class MapView(QSplitter):
         # layout set up
         self.setOrientation(Qt.Vertical)
         self.imageview = MapViewWidget()
-        self.spectra = SpectraPlotWidget()
+        self.spectra = xasSpectraWidget()
 
         self.imageview_and_toolbar = QSplitter()
         self.imageview_and_toolbar.setOrientation(Qt.Horizontal)
@@ -164,13 +165,22 @@ class MapView(QSplitter):
         roiState = roi.getState()
         self.roi.setState(roiState)
 
-    def getImgShape(self, imgShape):
+    def getImgShape(self, imgShape, rc2ind):
         self.row, self.col = imgShape[0], imgShape[1]
+        self.rc2ind = rc2ind
+        # determine whether spectra data is sparse
+        if len(rc2ind) == self.row * self.col:
+            self.isDenseImage = True
+        else:
+            self.isDenseImage = False
         #set up X,Y grid
         x = np.linspace(0, self.col - 1, self.col)
         y = np.linspace(self.row - 1, 0, self.row)
         self.X, self.Y = np.meshgrid(x, y)
-        self.fullMap = list(zip(self.Y.ravel(), self.X.ravel()))
+        if self.isDenseImage:
+            self.fullMap = list(zip(self.Y.ravel(), self.X.ravel()))
+        else:
+            self.fullMap = list(rc2ind.keys())
         # setup automask item
         self.autoMask = np.ones((self.row, self.col))
         self.autoMaskItem = pg.ImageItem(self.autoMask, axisOrder="row-major", autoLevels=True, opacity=0.3)
@@ -237,8 +247,15 @@ class MapView(QSplitter):
             self.pixSelection['ROI'] = list(reverseROI)
 
         if (self.pixSelection['ROI'] is None) and (self.pixSelection['Mask'] is None):
-            self.sigRoiPixels.emit(None) # no ROI, select all pixels
-            self.selectMask = np.ones((self.row, self.col))
+            if self.isDenseImage:
+                self.sigRoiPixels.emit(None) # no ROI, select all pixels
+                self.selectMask = np.ones((self.row, self.col))
+            else:
+                allSelected = np.array(list(self.rc2ind.keys()), dtype='int')
+                self.sigRoiPixels.emit(allSelected)  # no ROI, select all sparse rc2ind
+                self.selectMask = np.zeros((self.row, self.col))
+                self.selectMask[allSelected[:, 0], allSelected[:, 1]] = 1
+                self.selectMask = np.flipud(self.selectMask)
             return
         elif self.pixSelection['ROI'] is None:
             allSelected = set(self.pixSelection['Mask']) #de-duplication of pixels
@@ -247,7 +264,12 @@ class MapView(QSplitter):
         else:
             allSelected = set(self.pixSelection['ROI']) & set(self.pixSelection['Mask'])
 
-        allSelected = np.array(list(allSelected), dtype='int')  # convert to array
+        if self.isDenseImage:
+            allSelected = np.array(list(allSelected), dtype='int')  # convert to array
+        else:
+            allSelected &= set(self.rc2ind.keys())
+            allSelected = np.array(list(allSelected), dtype='int')
+
         self.selectMask = np.zeros((self.row, self.col))
         if len(allSelected) > 0:
             self.selectMask[allSelected[:, 0], allSelected[:, 1]] = 1
@@ -265,6 +287,7 @@ class BSISB(GUIPlugin):
 
     def __init__(self, *args, **kwargs):
 
+        self.xas = xasImageView()
         self.mapToH5 = mapToH5()
         # Data model
         self.headermodel = QStandardItemModel()
@@ -281,8 +304,8 @@ class BSISB(GUIPlugin):
         self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')
         self.imageview.currentChanged.connect(self.updateTab)
 
-        self.stages = {"MapToH5": GUILayout(self.mapToH5),
-                       "Image View": GUILayout(self.imageview),
+        self.stages = {'Xas View': GUILayout(self.xas),
+                       "ROI View": GUILayout(self.imageview),
                        "Factor Analysis": GUILayout(self.FA_widget)}
                        # "NMF": GUILayout(self.NMF_widget)}
         super(BSISB, self).__init__(*args, **kwargs)
@@ -302,11 +325,12 @@ class BSISB(GUIPlugin):
         # read out image shape
         imageEvent = next(header.events(fields=['image']))
         imgShape = imageEvent['imgShape']
+        rc2ind = imageEvent['rc_index']
 
         # get current MapView widget
         currentMapView = self.imageview.currentWidget()
         # transmit imgshape to currentMapView
-        currentMapView.getImgShape(imgShape)
+        currentMapView.getImgShape(imgShape, rc2ind)
         # get xy coordinates of ROI selected pixels
         currentMapView.sigRoiPixels.connect(partial(self.appendSelection, 'pixel'))
         currentMapView.sigRoiState.connect(partial(self.appendSelection, 'ROI'))
