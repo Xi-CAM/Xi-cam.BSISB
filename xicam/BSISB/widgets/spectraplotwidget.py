@@ -69,7 +69,7 @@ class SpectraPlotWidget(PlotWidget):
             self._data = data
 
     def showSpectra(self, i=0):
-        if self._data is not None:
+        if (self._data is not None) and (i < len(self._data)):
             self.clear()
             self._meanSpec = False
             self.spectrumInd = i
