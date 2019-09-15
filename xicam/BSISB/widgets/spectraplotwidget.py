@@ -10,23 +10,31 @@ from lbl_ir.data_objects.ir_map import val2ind
 class SpectraPlotWidget(PlotWidget):
     sigEnergyChanged = Signal(object)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, linePos=650, txtPosRatio=0.25, invertX=True, *args, **kwargs):
+        """
+        A widget to display a 1D spectrum
+        :param linePos: the initial position of the InfiniteLine
+        :param txtPosRatio: a coefficient that determines the relative position of the textItem
+        :param invertX: whether to invert X-axis
+        """
         super(SpectraPlotWidget, self).__init__(*args, **kwargs)
         self._data = None
+        assert (txtPosRatio >= 0) and (txtPosRatio <= 1), 'Please set txtPosRatio value between 0 and 1.'
+        self.txtPosRatio = txtPosRatio
         self.positionmap = dict()
         self.wavenumbers = None
-        self._meanSpec = True # whether current spectrum is a mean spectrum
+        self._meanSpec = True  # whether current spectrum is a mean spectrum
         self.line = InfiniteLine(movable=True)
         self.line.setPen((255, 255, 0, 200))
-        self.line.setValue(650)
+        self.line.setValue(linePos)
         self.line.sigPositionChanged.connect(self.sigEnergyChanged)
         self.line.sigPositionChanged.connect(self.getEnergy)
         self.addItem(self.line)
-        self.cross = PlotDataItem([650], [0], symbolBrush=(255, 0, 0), symbolPen=(255, 0, 0), symbol='+',
+        self.cross = PlotDataItem([linePos], [0], symbolBrush=(255, 0, 0), symbolPen=(255, 0, 0), symbol='+',
                                   symbolSize=20)
         self.cross.setZValue(100)
         self.addItem(self.cross)
-        self.getViewBox().invertX(True)
+        self.getViewBox().invertX(invertX)
         self.spectrumInd = 0
         self.selectedPixels = None
         self._y = None
@@ -124,8 +132,9 @@ class SpectraPlotWidget(PlotWidget):
         txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
                              X = {x_val: .2f}, Y = {y_val: .4f}</div>'
         self.txt = TextItem(html=txt_html, anchor=(0, 0))
-        ymax = max(y)
+        ymax = np.max(y)
         self._y = y
-        self.txt.setPos(1500, 0.95 * ymax)
+        r = self.txtPosRatio
+        self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
         self.cross.setData([x_val], [y_val])
         self.addItem(self.txt)
