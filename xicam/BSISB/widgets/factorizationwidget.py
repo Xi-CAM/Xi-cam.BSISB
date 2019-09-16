@@ -475,17 +475,15 @@ class FactorizationWidget(QSplitter):
                 self.roiList[i].blockSignals(True)
                 self.roiList[i].setState(roiState[1])
                 self.roiList[i].blockSignals(False)
-
         except Exception:
             for i in range(4):
                 self.roiList[i].hide()
-                # self.roiList[i].setState(self.roiInitState)
-        # update mask
+        # update automask
         try:
             maskState = self.headermodel.item(self.selectMapIdx).maskState
             for i in range(4):
                 self.maskList[i].setImage(maskState[1])
-                if maskState[0]:  # roi on
+                if maskState[0]:  # automask on
                     self.maskList[i].show()
                 else:
                     self.maskList[i].hide()
@@ -496,7 +494,7 @@ class FactorizationWidget(QSplitter):
             selectMaskState = self.headermodel.item(self.selectMapIdx).selectState
             for i in range(4):
                 self.selectMaskList[i].setImage(selectMaskState[1])
-                if selectMaskState[0]:  # roi on
+                if selectMaskState[0]:  # selectmask on
                     self.selectMaskList[i].show()
                 else:
                     self.selectMaskList[i].hide()

@@ -9,6 +9,7 @@ from pyqtgraph.parametertree import ParameterTree, Parameter
 import numpy as np
 from xicam.core import msg
 from xicam.core.data import NonDBHeader
+from xicam.gui.widgets.imageviewmixins import BetterButtons
 from xicam.BSISB.widgets.uiwidget import MsgBox, uiSaveFile, uiGetFile
 from xicam.BSISB.widgets.mapconvertwidget import mapToH5
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
@@ -24,11 +25,20 @@ class MapView(QSplitter):
     sigSelectMaskState = Signal(object)
 
     def __init__(self, header: NonDBHeader = None, field: str = 'primary', ):
+        """
+        A widget to display imageCube like dataset with ROI buttons
+        :param header: Xi-cam datahandler header
+        :param field: header's field param
+        """
         super(MapView, self).__init__()
         # layout set up
         self.setOrientation(Qt.Vertical)
         self.imageview = MapViewWidget()
         self.spectra = SpectraPlotWidget()
+        self.spectraSplitter = QSplitter()
+        self.spectraSplitter.addWidget(self.spectra)
+        # self.spectraSplitter.insertWidget(1, BetterButtons())  # add a 2D spectrum window
+        # self.spectra.getViewBox().setXRange(0, 4000)  # set xrange
 
         self.imageview_and_toolbar = QSplitter()
         self.imageview_and_toolbar.setOrientation(Qt.Horizontal)
@@ -86,7 +96,7 @@ class MapView(QSplitter):
         self.imageview_and_toolbar.addWidget(self.imageview)
         self.imageview_and_toolbar.setSizes([1, 1000])#adjust initial splitter size
         self.addWidget(self.imageview_and_toolbar)
-        self.addWidget(self.spectra)
+        self.addWidget(self.spectraSplitter)
         self.setSizes([1000, 1000])  # adjust initial splitter size
 
         # readin header
@@ -153,7 +163,7 @@ class MapView(QSplitter):
                 self.roi.show()
             self.autoMaskBtn.setChecked(roiStates['maskBtn'])
             self.selectMaskBtn.setChecked(True)
-            self.showSelectMask()
+            self.showSelectMask(True)
             for k, v in roiStates['parameter'].items():
                 self.parameter[k] = v
             MsgBox(f'ROI states were loaded from: \n{filePath + fileName}')
@@ -208,8 +218,15 @@ class MapView(QSplitter):
             self.intersectSelection('ROI', None) # no ROI, select all pixels
             self.sigRoiState.emit((False, self.roi.getState()))
 
-    def showSelectMask(self):
+    def showSelectMask(self, signalReceived):
         if self.selectMaskBtn.isChecked():
+            # show roi and autoMask
+            if self.roiBtn.isChecked():
+                self.roi.show()
+                self.sigRoiState.emit((True, self.roi.getState()))
+            if self.autoMaskBtn.isChecked():
+                self.autoMaskItem.show()
+                self.sigAutoMaskState.emit((True, self.autoMask))
             # update and show mask
             self.selectMaskItem.setImage(self.selectMask)
             self.selectMaskItem.show()
@@ -217,6 +234,12 @@ class MapView(QSplitter):
         else:
             self.selectMaskItem.hide()
             self.sigSelectMaskState.emit((False, self.selectMask))
+            if signalReceived == False:
+                self.roi.hide()
+                self.autoMaskItem.hide()
+                self.sigRoiState.emit((False, self.roi.getState()))
+                self.sigAutoMaskState.emit((False, self.autoMask))
+
 
     def showAutoMask(self):
         if self.autoMaskBtn.isChecked():
@@ -275,7 +298,7 @@ class MapView(QSplitter):
             self.selectMask = np.flipud(self.selectMask)
         self.sigRoiPixels.emit(allSelected)
         # show SelectMask
-        self.showSelectMask()
+        self.showSelectMask(selector)
         #recover ROI selection
         if (self.parameter['ROI type'] == '-') and (self.pixSelection['ROI'] is not None):
              self.pixSelection['ROI'] = roi_copy
