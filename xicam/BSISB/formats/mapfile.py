@@ -1,4 +1,4 @@
-from xicam.plugins.DataHandlerPlugin import DataHandlerPlugin, start_doc, descriptor_doc, embedded_local_event_doc
+from xicam.plugins.datahandlerplugin import DataHandlerPlugin, start_doc, descriptor_doc, embedded_local_event_doc
 import functools
 from lbl_ir.data_objects.ir_map import ir_map
 import uuid
