@@ -1,6 +1,5 @@
 from qtpy.QtWidgets import QSplitter, QGridLayout, QWidget, QListView
 from xicam.core import msg
-from xicam.gui.widgets.imageviewmixins import BetterButtons
 from pyqtgraph import PlotWidget, PlotDataItem, TextItem, mkPen, InfiniteLine, ImageItem, PolyLineROI
 from qtpy.QtCore import Qt, QItemSelectionModel
 from qtpy.QtGui import QStandardItemModel
@@ -11,10 +10,10 @@ from sklearn.decomposition import PCA, NMF, FastICA
 from sklearn.preprocessing import StandardScaler, Normalizer
 import numpy as np
 import pandas as pd
-import pyqtgraph as pg
 import matplotlib.pyplot as plt
 import seaborn as sns
 from xicam.BSISB.widgets.uiwidget import MsgBox
+from xicam.BSISB.widgets.imshowwidget import SlimImageView
 from lbl_ir.data_objects.ir_map import val2ind
 from lbl_ir.tasks.preprocessing import data_prep
 from lbl_ir.tasks.NMF.multi_set_analyses import aggregate_data
@@ -282,6 +281,15 @@ class FactorizationParameters(ParameterTree):
                 self.sigPCA.emit((self.wavenumbers_select, self.NMF, self.data_NMF, self.dataRowSplit))
 
     def popup_plots(self):
+        # component variance ratio plot
+        if self.method == 'PCA':
+            plt.plot(getattr(self, self.method).explained_variance_ratio_, 'o-b')
+            ax = plt.gca()
+            ax.set_ylabel('Explained variance ratio', fontsize=16)
+            ax.set_xlabel('Component number', fontsize=16)
+            ax.set_xticks(np.arange(self.parameter['# of Components']))
+        # loadings plot
+        plt.figure()
         labels = []
         for i in range(getattr(self, self.method).components_.shape[0]):
             labels.append(self.method + str(i + 1))
@@ -290,7 +298,9 @@ class FactorizationParameters(ParameterTree):
         loadings_legend = plt.legend(loc='best')
         plt.setp(loadings_legend, draggable=True)
         plt.xlim([max(self.wavenumbers_select), min(self.wavenumbers_select)])
-
+        ax = plt.gca()
+        ax.set_xlabel('Wavenumber$(cm^{-1})$', fontsize=16)
+        # matrix plot
         groupLabel = np.zeros((self.dataRowSplit[-1], 1))
         for i in range(len(self.dataRowSplit) - 1):
             groupLabel[self.dataRowSplit[i]:self.dataRowSplit[i + 1]] = int(i)
@@ -392,10 +402,10 @@ class FactorizationWidget(QSplitter):
         self._colors = ['r', 'g', 'b', 'y', 'c', 'm', 'w']  # color for plots
 
         # self.spectraROI = PlotWidget()
-        self.NWimage = BetterButtons()
-        self.NEimage = BetterButtons()
-        self.SWimage = BetterButtons()
-        self.SEimage = BetterButtons()
+        self.NWimage = SlimImageView()
+        self.NEimage = SlimImageView()
+        self.SWimage = SlimImageView()
+        self.SEimage = SlimImageView()
         # setup ROI item
         sideLen = 10
         self.roiList = []

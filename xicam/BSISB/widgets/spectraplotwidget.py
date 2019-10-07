@@ -5,6 +5,7 @@ import numpy as np
 from pyqtgraph import InfiniteLine
 from qtpy.QtCore import Signal
 from lbl_ir.data_objects.ir_map import val2ind
+from xicam.BSISB.widgets.mapviewwidget import toHtml
 
 
 class SpectraPlotWidget(PlotWidget):
@@ -46,14 +47,11 @@ class SpectraPlotWidget(PlotWidget):
             x_val = self.wavenumbers[idx]
             y_val = self._y[idx]
             if not self._meanSpec:
-                txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                                Spectrum #{self.spectrumInd}</div>'
+                txt_html = toHtml(f'Spectrum #{self.spectrumInd}')
             else:
-                txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                                 {self._mean_title}</div>'
+                txt_html = toHtml(f'{self._mean_title}')
 
-            txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                                 X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+            txt_html += toHtml(f'X = {x_val: .2f}, Y = {y_val: .4f}')
             self.txt.setHtml(txt_html)
             self.cross.setData([x_val], [y_val])
 
@@ -123,14 +121,11 @@ class SpectraPlotWidget(PlotWidget):
             y_val = y[idx]
 
         if not self._meanSpec:
-            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                            Spectrum #{self.spectrumInd}</div>'
+            txt_html = toHtml(f'Spectrum #{self.spectrumInd}')
         else:
-            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                             {self._mean_title}</div>'
+            txt_html = toHtml(f'{self._mean_title}')
 
-        txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                             X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+        txt_html += toHtml(f'X = {x_val: .2f}, Y = {y_val: .4f}')
         self.txt = TextItem(html=txt_html, anchor=(0, 0))
         ymax = np.max(y)
         self._y = y

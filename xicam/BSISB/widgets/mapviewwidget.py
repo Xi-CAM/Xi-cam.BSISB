@@ -1,12 +1,15 @@
 import numpy as np
-from xicam.gui.widgets.dynimageview import DynImageView
+from xicam.BSISB.widgets.imshowwidget import SlimImageView
 from xicam.core import msg
 from xicam.core.data import NonDBHeader
 from pyqtgraph import ArrowItem, TextItem, PlotDataItem
 from qtpy.QtCore import Signal
 from lbl_ir.data_objects.ir_map import val2ind
 
-class MapViewWidget(DynImageView):
+def toHtml(txt, size=12):
+    return f'<div style="text-align: center"><span style="color: #FFF; font-size: {size}pt">{txt}</div>'
+
+class MapViewWidget(SlimImageView):
     sigShowSpectra = Signal(int)
 
     def __init__(self, *args, **kwargs):
@@ -43,10 +46,11 @@ class MapViewWidget(DynImageView):
                 self.cross.setData([x + 0.5], [self.row - y - 0.5])
                 self.cross.show()
                 # update text
-                self.txt.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 8pt">Point: #{ind}</div>\
-            <div style="text-align: center"><span style="color: #FFF; font-size: 8pt">X: {x}</div>\
-            <div style="text-align: center"><span style="color: #FFF; font-size: 8pt">Y: {y}</div>\
-            <div style="text-align: center"><span style="color: #FFF; font-size: 8pt">Val: {self._image[self.row - y -1, x]: .4f}</div>')
+                self.txt.setHtml(toHtml(f'Point: #{ind}', size=8)
+                                 + toHtml(f'X: {x}', size=8)
+                                 + toHtml(f'Y: {y}', size=8)
+                                 + toHtml(f'Val: {self._image[self.row - y -1, x]: .4f}', size=8)
+                                 )
             except Exception:
                 self.cross.hide()
 
