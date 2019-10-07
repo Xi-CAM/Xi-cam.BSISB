@@ -31,7 +31,6 @@ class BSISB(GUIPlugin):
 
         # Setup tabviews and update map selection
         self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')
-        self.imageview.currentChanged.connect(self.updateTab)
 
         self.stages = {'MapToH5': GUILayout(self.mapToH5),
                        "Image View": GUILayout(self.imageview),
