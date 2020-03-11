@@ -18,7 +18,7 @@ class MapView(QSplitter):
     sigAutoMaskState = Signal(object)
     sigSelectMaskState = Signal(object)
 
-    def __init__(self, header: NonDBHeader = None, field: str = 'primary', ):
+    def __init__(self, header: NonDBHeader = None, stream: str = 'primary', field: str = 'primary' ):
         """
         A widget to display imageCube like dataset with ROI buttons
         :param header: Xi-cam datahandler header
