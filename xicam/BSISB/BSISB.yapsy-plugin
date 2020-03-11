@@ -1,9 +1,0 @@
-[Core]
-Name = xicam.BSISB
-Module = __init__.py
-
-[Documentation]
-Author = Liang Chen
-Version = 0.1
-Website = 
-Description = 
