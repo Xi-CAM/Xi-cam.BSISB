@@ -35,5 +35,10 @@ setup(
     author='Liang Chen',
     install_requires=install_requires,
     dependency_links=dependency_links,
-    author_email='lchen2@lbl.gov'
+    author_email='lchen2@lbl.gov',
+    entry_points={"xicam.plugins.GUIPlugin":
+                    ["BSISB = xicam.BSISB:BSISB"],
+                  "xicam.plugins.DataHandlerPlugin":
+                    ["mapfile = xicam.BSISB.formats.mapfile:MapFilePlugin"]
+                  }
 )
