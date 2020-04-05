@@ -339,7 +339,7 @@ class ComponentPlotWidget(PlotWidget):
         self.line = InfiniteLine(pos=800, movable=True)
         self.line.sigPositionChanged.connect(self.getEnergy)
         self.addItem(self.line)
-        self.cross = PlotDataItem([800], [0], symbolBrush=(255, 255, 255), symbolPen=(255, 255, 255), symbol='+', symbolSize=20)
+        self.cross = PlotDataItem([800], [0], symbolBrush=(255, 255, 255), symbolPen=(255, 255, 255), symbol='+', symbolSize=25)
         self.addItem(self.cross)
         self.txt = TextItem()
         self.getViewBox().invertX(True)
@@ -376,7 +376,7 @@ class ComponentPlotWidget(PlotWidget):
         if ymax > self.ymax:
             self.ymax = ymax
         self._x, self._y = x, y
-        self.txt.setPos(1200, 0.95 * self.ymax)
+        self.txt.setPos(x[0], 0.95 * self.ymax)
         self.addItem(self.txt)
         return plot_item
 
