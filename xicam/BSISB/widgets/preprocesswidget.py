@@ -53,15 +53,15 @@ class Preprocessor:
         # decide if num of anchor points is enough for 'quadratic' or 'cubic' fit
         if len(self.wav_anchor) < 2:
             MsgBox('Baseline fitting needs at least 2 anchor points.\n' +
-                   'Please add more "anchor points" to correctly fit the baseline.')
+                   'Please add more "anchor points" to correctly fit the baseline.', type='error')
             return False
         elif len(self.wav_anchor) < 3 and kind == 'quadratic':
             MsgBox('Quadratic baseline needs more than 2 anchor points.\n' +
-                   'Please add more "anchor points" to correctly fit the baseline.')
+                   'Please add more "anchor points" to correctly fit the baseline.', type='error')
             return False
         elif len(self.wav_anchor) < 4 and kind == 'cubic':
             MsgBox('Cubic baseline needs more than 3 anchor points.\n' +
-                   'Please add more "anchor points" to correctly fit the baseline.')
+                   'Please add more "anchor points" to correctly fit the baseline.', type='error')
             return False
         else:
             return True
