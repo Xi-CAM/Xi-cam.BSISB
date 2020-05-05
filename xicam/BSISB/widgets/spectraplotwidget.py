@@ -1,4 +1,5 @@
-from pyqtgraph import PlotWidget, TextItem, PlotDataItem
+from qtpy.QtCore import Qt
+from pyqtgraph import PlotWidget, TextItem, PlotDataItem, mkPen
 from xicam.core import msg
 from xicam.core.data import NonDBHeader
 import numpy as np
@@ -11,7 +12,7 @@ from xicam.BSISB.widgets.mapviewwidget import toHtml
 class SpectraPlotWidget(PlotWidget):
     sigEnergyChanged = Signal(object)
 
-    def __init__(self, linePos=650, txtPosRatio=0.25, invertX=True, *args, **kwargs):
+    def __init__(self, linePos=650, txtPosRatio=0.3, invertX=True, *args, **kwargs):
         """
         A widget to display a 1D spectrum
         :param linePos: the initial position of the InfiniteLine
@@ -133,3 +134,129 @@ class SpectraPlotWidget(PlotWidget):
         self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
         self.cross.setData([x_val], [y_val])
         self.addItem(self.txt)
+
+class baselinePlotWidget(SpectraPlotWidget):
+    def __init__(self):
+        super(baselinePlotWidget, self).__init__()
+        self.line.setValue(800)
+        self.txt = TextItem('', anchor=(0, 0))
+        self.cross = PlotDataItem([800], [0], symbolBrush=(255, 255, 0), symbolPen=(255, 255, 0),
+                                  symbol='+',symbolSize=20)
+        self.line.sigPositionChanged.connect(self.getMu)
+        self._mu = None
+
+    def plot(self, x, y, *args, **kwargs):
+        # set up infinity line and get its position
+        self.plotItem.plot(x, y, *args, **kwargs)
+        self.addItem(self.line)
+        self.addItem(self.cross)
+        x_val = self.line.value()
+        if x_val == 0:
+            y_val = 0
+        else:
+            idx = val2ind(x_val, self.wavenumbers)
+            x_val = self.wavenumbers[idx]
+            y_val = y[idx]
+
+        if not self._meanSpec:
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                            Spectrum #{self.spectrumInd}</div>'
+        else:
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                             {self._mean_title}</div>'
+
+        txt_html += f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                             X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+        self.txt = TextItem(html=txt_html, anchor=(0, 0))
+        ymax = np.max(y)
+        self._y = y
+        r = self.txtPosRatio
+        self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
+        self.cross.setData([x_val], [y_val])
+        self.addItem(self.txt)
+
+    def getMu(self):
+        if self._mu is not None:
+            x_val = self.line.value()
+            if x_val == 0:
+                y_val = 0
+            else:
+                idx = val2ind(x_val, self._x)
+                x_val = self._x[idx]
+                y_val = self._mu[idx]
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                                 X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+            self.txt.setHtml(txt_html)
+            self.cross.setData([x_val], [y_val])
+
+    def addDataCursor(self, x, y):
+        self.addItem(self.line)
+        self.addItem(self.cross)
+        ymax = np.max(y)
+        self.txt.setText('')
+        r = self.txtPosRatio
+        self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
+        self.addItem(self.txt)
+        self.getMu()
+
+    def clearAll(self):
+        # remove legend
+        _legend = self.plotItem.legend
+        if (_legend is not None) and (_legend.scene() is not None):
+            _legend.scene().removeItem(_legend)
+        self.clear()
+
+    def plotBase(self, dataGroup, plotType='raw'):
+        """
+        make plots for Larch Group object
+        :param dataGroup: Larch Group object
+        :return:
+        """
+        # add legend
+        self.plotItem.addLegend(offset=(-1, -1))
+        x = self._x = dataGroup.energy # self._x, self._mu for getEnergy
+        y = self._mu = dataGroup.specTrim
+        n = len(x) # array length
+        self._y = None  # disable getEnergy func
+        if plotType == 'raw':
+            self.plotItem.plot(x, y, name='Raw', pen=mkPen('w', width=2))
+        elif plotType == 'base':
+            self.plotItem.plot(x, y, name='Raw', pen=mkPen('w', width=2))
+            self.plotItem.plot(x, dataGroup.rubberBaseline, name='Rubberband baseline', pen=mkPen('g', style=Qt.DotLine, width=2))
+            self.plotItem.plot(dataGroup.wav_anchor, dataGroup.spec_anchor, symbol='o', symbolPen='r', symbolBrush=0.5)
+        elif plotType == 'rubberband':
+            y = self._mu = dataGroup.rubberDebased
+            self.plotItem.plot(x, y, name='Rubberband debased', pen=mkPen('r', width=2))
+        elif plotType == 'deriv2':
+            y = self._mu = dataGroup.rubberDebased # for data cursor
+            scale, offset = self.alignTwoCurve(dataGroup.rubberDebased[n//4:n*3//4], dataGroup.deriv2[n//4:n*3//4])
+            deriv2Scaled = dataGroup.deriv2 * scale + offset
+            ymin, ymax = np.min(y), np.max(y)
+            self.getViewBox().setYRange(ymin, ymax, padding=0.1)
+            self.plotItem.plot(x, y, name='Rubberband debased', pen=mkPen('r', width=2))
+            self.plotItem.plot(x, deriv2Scaled, name='2nd derivative (scaled)', pen=mkPen('g', width=2))
+        elif plotType == 'deriv4':
+            y = self._mu = dataGroup.rubberDebased
+            scale, offset = self.alignTwoCurve(dataGroup.rubberDebased[n//4:n*3//4], dataGroup.deriv4[n//4:n*3//4])
+            deriv4Scaled = dataGroup.deriv4 * scale + offset
+            ymin, ymax = np.min(y), np.max(y)
+            self.getViewBox().setYRange(ymin, ymax, padding=0.1)
+            self.plotItem.plot(x, y, name='Rubberband debased', pen=mkPen('r', width=2))
+            self.plotItem.plot(x, deriv4Scaled, name='4th derivative (normed, scaled)', pen=mkPen('g', width=2))
+        # add infinityline, cross
+        self.addDataCursor(x, y)
+
+    def alignTwoCurve(self, y1, y2):
+        """
+        Align the scale of y2 to that of y1
+        :param y1: the main curve
+        :param y2: the curve to be aligned
+        :return:
+        scale: scale factor
+        offset: y offset
+        """
+        y1Range, y2Range = np.max(y1) - np.min(y1), np.max(y2) - np.min(y2)
+        scale = y1Range / y2Range
+        y = y2 * scale
+        offset = np.max(y1) - np.max(y)
+        return scale, offset

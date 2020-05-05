@@ -86,7 +86,7 @@ class MapFilePlugin(DataHandlerPlugin):
             
         for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'image', cls, (path,), resource_kwargs={'E': i},
-                                           metadata={'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'index_rc': ind2rc, 'imgShape': imgShape})
+                                           metadata={'path': path, 'wavenumbers': wavenumbers, 'rc_index': rc2ind, 'index_rc': ind2rc, 'imgShape': imgShape})
 
     @classmethod
     def getSpectraDescriptor(cls, path, start_uid):
@@ -112,7 +112,7 @@ class MapFilePlugin(DataHandlerPlugin):
 
         for i in range(n):
             yield embedded_local_event_doc(descriptor_uid, 'spectra', cls, (path,), resource_kwargs={'i': i},
-                                           metadata={'wavenumbers':wavenumbers, 'rc_index': rc2ind, 'index_rc': ind2rc, 'imgShape':imgShape})
+                                           metadata={'path': path, 'wavenumbers':wavenumbers, 'rc_index': rc2ind, 'index_rc': ind2rc, 'imgShape':imgShape})
 
     @classmethod
     def ingest(cls, paths):

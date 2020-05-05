@@ -8,9 +8,25 @@ from xicam.BSISB.widgets.mapviewwidget import MapViewWidget
 from xicam.BSISB.widgets.spectramaproiwidget import MapView
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from xicam.BSISB.widgets.factorizationwidget import FactorizationWidget
+from xicam.BSISB.widgets.preprocesswidget import PreprocessWidget
 from xicam.plugins import GUIPlugin, GUILayout
 from xicam.gui.widgets.tabview import TabView
 
+class BSISBTabview(TabView):
+
+    def __init__(self, *args, **kwargs):
+        super(BSISBTabview, self).__init__(*args, **kwargs)
+
+    def closeTab(self, i):
+        newindex = self.currentIndex()
+        if (i <= self.currentIndex()) and (newindex > 0):
+            newindex -= 1
+
+        self.removeTab(i)
+        self.catalogmodel.removeRow(i)
+        self.setCurrentIndex(newindex)
+        self.selectionmodel.setCurrentIndex(self.catalogmodel.index(newindex, 0), QItemSelectionModel.Rows
+                                            | QItemSelectionModel.ClearAndSelect)
 
 class BSISB(GUIPlugin):
     name = 'BSISB'
@@ -23,17 +39,19 @@ class BSISB(GUIPlugin):
 
         # Selection model
         self.selectionmodel = QItemSelectionModel(self.headermodel)
-
+        self.preprocess = PreprocessWidget(self.headermodel, self.selectionmodel)
         self.FA_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
 
         # update headers list when a tab window is closed
         self.headermodel.rowsRemoved.connect(partial(self.FA_widget.setHeader, 'spectra'))
 
         # Setup tabviews and update map selection
-        self.imageview = TabView(self.headermodel, self.selectionmodel, MapView, 'image')
+        self.imageview = BSISBTabview(self.headermodel, self.selectionmodel, MapView, 'image')
+        self.imageview.currentChanged.connect(self.updateTab)
 
-        self.stages = {'MapToH5': GUILayout(self.mapToH5),
+        self.stages = {"MapToH5": GUILayout(self.mapToH5),
                        "Image View": GUILayout(self.imageview),
+                       "Preprocess": GUILayout(self.preprocess),
                        "Factor Analysis": GUILayout(self.FA_widget)}
                        # "NMF": GUILayout(self.NMF_widget)}
         super(BSISB, self).__init__(*args, **kwargs)
@@ -65,6 +83,7 @@ class BSISB(GUIPlugin):
         currentMapView.sigAutoMaskState.connect(partial(self.appendSelection, 'autoMask'))
         currentMapView.sigSelectMaskState.connect(partial(self.appendSelection, 'select'))
 
+        self.preprocess.setHeader(field='spectra')
         self.FA_widget.setHeader(field='spectra')
         for i in range(4):
             self.FA_widget.roiList[i].sigRegionChangeFinished.connect(self.updateROI)
@@ -91,7 +110,9 @@ class BSISB(GUIPlugin):
             selectMapIdx = 0
         self.imageview.widget(selectMapIdx).roiMove(roi)
 
-    def updateTab(self, tabIdx):
-        if tabIdx >= 0:
-            self.selectionmodel.select(self.headermodel.index(tabIdx, 0), QItemSelectionModel.ClearAndSelect)
-
+    def updateTab(self):
+        # clear specItemModel
+        self.preprocess.specItemModel.clear()
+        self.preprocess.rawSpectra.clearAll()
+        self.preprocess.resultSpectra.clearAll()
+        self.preprocess.infoBox.setText('')
