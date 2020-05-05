@@ -399,7 +399,7 @@ class FactorizationWidget(QSplitter):
         # self.componentSpectra = PlotWidget()
         self.componentSpectra = ComponentPlotWidget()
         self._plotLegends = self.componentSpectra.addLegend()
-        self._colors = ['r', 'g', 'b', 'y', 'c', 'm', 'w']  # color for plots
+        self._colors = ['r', 'g', 'm', 'y', 'c', 'b', 'w']  # color for plots
 
         # self.spectraROI = PlotWidget()
         self.NWimage = SlimImageView()
@@ -611,8 +611,10 @@ class FactorizationWidget(QSplitter):
         for i in range(4):
             if i == k:
                 self._plots[i].setPen(mkPen(self._colors[k], width=6))
+                self._plots[i].setZValue(50)
             else:
                 self._plots[i].setPen(mkPen(self._colors[i], width=2))
+                self._plots[i].setZValue(0)
         self.componentSpectra._x, self.componentSpectra._y = self._plots[k].getData()
         self.componentSpectra.getEnergy()
 
