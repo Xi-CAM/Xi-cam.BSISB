@@ -9,6 +9,7 @@ from xicam.BSISB.widgets.spectramaproiwidget import MapView
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from xicam.BSISB.widgets.factorizationwidget import FactorizationWidget
 from xicam.BSISB.widgets.preprocesswidget import PreprocessWidget
+from xicam.BSISB.widgets.clusteringwidget import ClusteringWidget
 from xicam.plugins import GUIPlugin, GUILayout
 from xicam.gui.widgets.tabview import TabView
 
@@ -41,6 +42,7 @@ class BSISB(GUIPlugin):
         self.selectionmodel = QItemSelectionModel(self.headermodel)
         self.preprocess = PreprocessWidget(self.headermodel, self.selectionmodel)
         self.FA_widget = FactorizationWidget(self.headermodel, self.selectionmodel)
+        self.clusterwidget = ClusteringWidget(self.headermodel, self.selectionmodel)
 
         # update headers list when a tab window is closed
         self.headermodel.rowsRemoved.connect(partial(self.FA_widget.setHeader, 'spectra'))
@@ -52,8 +54,8 @@ class BSISB(GUIPlugin):
         self.stages = {#"MapToH5": GUILayout(self.mapToH5),
                        "Image View": GUILayout(self.imageview),
                        "Preprocess": GUILayout(self.preprocess),
-                       "Factor Analysis": GUILayout(self.FA_widget)}
-                       # "NMF": GUILayout(self.NMF_widget)}
+                       "Factor Analysis": GUILayout(self.FA_widget),
+                       "Clustering": GUILayout(self.clusterwidget)}
         super(BSISB, self).__init__(*args, **kwargs)
 
     def appendHeader(self, header: NonDBHeader, **kwargs):
@@ -85,6 +87,7 @@ class BSISB(GUIPlugin):
 
         self.preprocess.setHeader(field='spectra')
         self.FA_widget.setHeader(field='spectra')
+        self.clusterwidget.setHeader(field='spectra')
         for i in range(4):
             self.FA_widget.roiList[i].sigRegionChangeFinished.connect(self.updateROI)
 
@@ -111,8 +114,6 @@ class BSISB(GUIPlugin):
         self.imageview.widget(selectMapIdx).roiMove(roi)
 
     def updateTab(self):
-        # clear specItemModel
-        self.preprocess.specItemModel.clear()
-        self.preprocess.rawSpectra.clearAll()
-        self.preprocess.resultSpectra.clearAll()
-        self.preprocess.infoBox.setText('')
+        # clean up all widgets
+        self.preprocess.cleanUp()
+        self.clusterwidget.cleanUp()
