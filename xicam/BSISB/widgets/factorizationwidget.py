@@ -1,8 +1,8 @@
-from qtpy.QtWidgets import QSplitter, QGridLayout, QWidget, QListView
+from qtpy.QtWidgets import *
 from xicam.core import msg
 from pyqtgraph import PlotWidget, PlotDataItem, TextItem, mkPen, InfiniteLine, ImageItem, PolyLineROI
 from qtpy.QtCore import Qt, QItemSelectionModel
-from qtpy.QtGui import QStandardItemModel
+from qtpy.QtGui import QStandardItemModel, QFont
 from functools import partial
 from qtpy.QtCore import Signal
 from pymcr.mcr import McrAR
@@ -35,7 +35,7 @@ class FactorizationParameters(ParameterTree):
                                               'values': ['PCA', 'NMF', 'MCR'],
                                               'value': 'PCA',
                                               'type': 'list'},
-                                             {'name': "# of Components",
+                                             {'name': "Components",
                                               'value': 4,
                                               'type': 'int'},
                                              {'name': "Calculate",
@@ -56,7 +56,7 @@ class FactorizationParameters(ParameterTree):
                                               'values': [1, 2, 3, 4],
                                               'value': 4,
                                               'type': 'list'},
-                                             {'name': "Wavenumber ROI",
+                                             {'name': "Wavenumber Range",
                                               'value': '800,1800',
                                               'type': 'str'},
                                              {'name': "Normalization",
@@ -76,10 +76,21 @@ class FactorizationParameters(ParameterTree):
         #constants
         self.method = 'PCA'
         self.field = 'spectra'
-
+        # change Fonts
+        self.fontSize = 12
+        font = QFont("Helvetica [Cronyx]", self.fontSize)
+        boldFont = QFont("Helvetica [Cronyx]", self.fontSize, QFont.Bold)
+        self.header().setFont(font)
+        for item in self.listAllItems():
+            if hasattr(item, 'widget'):
+                item.setFont(0, boldFont)
+                item.widget.setFont(font)
+                item.displayLabel.setFont(font)
+                item.widget.setMaximumHeight(40)
+        # connect signals
         self.parameter.child('Calculate').sigActivated.connect(self.calculate)
         self.parameter.child('Save results').sigActivated.connect(self.saveResults)
-        self.parameter.child('# of Components').sigValueChanged.connect(self.setNumComponents)
+        self.parameter.child('Components').sigValueChanged.connect(self.setNumComponents)
         self.parameter.child('Method').sigValueChanged.connect(self.setMethod)
         self.parameter.child('C regressor').hide()
 
@@ -127,7 +138,7 @@ class FactorizationParameters(ParameterTree):
             self._dataSets['volume'].append(path)
 
     def setNumComponents(self):
-        N = self.parameter['# of Components']
+        N = self.parameter['Components']
 
         for i in range(4):
             param = self.parameter.child(f'Map {i + 1} Component')
@@ -135,11 +146,11 @@ class FactorizationParameters(ParameterTree):
 
     def calculate(self):
 
-        N = self.parameter['# of Components']
+        N = self.parameter['Components']
 
         if hasattr(self, '_dataSets'):
             wavROIList = []
-            for entry in self.parameter['Wavenumber ROI'].split(','):
+            for entry in self.parameter['Wavenumber Range'].split(','):
                 try:
                     wavROIList.append(val2ind(int(entry), self.wavenumbers))
                 except:
@@ -151,7 +162,7 @@ class FactorizationParameters(ParameterTree):
                 for i in range(len(wavROIList) // 2):
                     wavROIidx += list(range(wavROIList[2 * i], wavROIList[2 * i + 1] + 1))
             else:
-                msg.logMessage('"Wavenumber ROI" values must be in pairs', msg.ERROR)
+                msg.logMessage('"Wavenumber Range" values must be in pairs', msg.ERROR)
                 MsgBox('Factorization computation aborted.', 'error')
                 return
 
@@ -287,7 +298,7 @@ class FactorizationParameters(ParameterTree):
             ax = plt.gca()
             ax.set_ylabel('Explained variance ratio', fontsize=16)
             ax.set_xlabel('Component number', fontsize=16)
-            ax.set_xticks(np.arange(self.parameter['# of Components']))
+            ax.set_xticks(np.arange(self.parameter['Components']))
         # loadings plot
         plt.figure()
         labels = []
@@ -446,7 +457,6 @@ class FactorizationWidget(QSplitter):
                 partial(self.updateComponents, i))
 
         self.addWidget(self.display)
-        self.rightsplitter.addWidget(self.parametertree)
         self.addWidget(self.rightsplitter)
         self.display.addWidget(self.gridwidget)
         self.display.addWidget(self.componentSpectra)
@@ -463,8 +473,22 @@ class FactorizationWidget(QSplitter):
         self.headerlistview = QListView()
         self.headerlistview.setModel(headermodel)
         self.headerlistview.setSelectionModel(selectionmodel)  # This might do weird things in the map view?
-        self.rightsplitter.addWidget(self.headerlistview)
         self.headerlistview.setSelectionMode(QListView.SingleSelection)
+        # add title to list view
+        self.fontSize = 12
+        font = QFont("Helvetica [Cronyx]", self.fontSize)
+        self.mapListWidget = QWidget()
+        self.listLayout = QVBoxLayout()
+        self.mapListWidget.setLayout(self.listLayout)
+        mapListTitle = QLabel('Maps list')
+        mapListTitle.setFont(font)
+        self.listLayout.addWidget(mapListTitle)
+        self.listLayout.addWidget(self.headerlistview)
+
+        # adjust right splitter
+        self.rightsplitter.addWidget(self.parametertree)
+        self.rightsplitter.addWidget(self.mapListWidget)
+        self.rightsplitter.setSizes([200, 50])
 
     def updateRoiMask(self):
         if self.selectionmodel.hasSelection():
@@ -576,7 +600,7 @@ class FactorizationWidget(QSplitter):
                 # show score plots
                 self.drawMap(component_index, i)
             # update the last image and loading plots as a recalculation complete signal
-            N = self.parameter['# of Components']
+            N = self.parameter['Components']
             self.parameter.child(f'Map 4 Component').setValue(N)
         # clear maps
         else:
