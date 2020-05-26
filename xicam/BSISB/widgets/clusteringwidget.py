@@ -110,7 +110,8 @@ class ScatterPlotWidget(SpectraPlotWidget):
 
     def __init__(self):
         super(ScatterPlotWidget, self).__init__(invertX=False, linePos=0)
-        self.scene().sigMouseClicked.connect(self.setCrossPos)
+        # self.scene().sigMouseClicked.connect(self.setCrossPos)
+        self.scene().sigMouseMoved.connect(self.moveCrossPos)
         self.line.hide()
         self.scatterData = None
         self.nbr = None
@@ -121,6 +122,16 @@ class ScatterPlotWidget(SpectraPlotWidget):
             mousePoint = self.getViewBox().mapToView(pos)
             x, y = mousePoint.x(), mousePoint.y()
             _, ind = self.nbr.kneighbors(np.array([[x, y]]))
+            self.addItem(self.cross)
+            self.cross.setData(self.scatterData[ind[0], 0], self.scatterData[ind[0], 1])
+            self.sigScatterClicked.emit(ind[0, 0])
+
+    def moveCrossPos(self, pos):
+        if (self.getViewBox().sceneBoundingRect().contains(pos)) and (self.scatterData is not None):
+            mousePoint = self.getViewBox().mapSceneToView(pos)
+            x, y = mousePoint.x(), mousePoint.y()
+            _, ind = self.nbr.kneighbors(np.array([[x, y]]))
+            self.addItem(self.cross)
             self.cross.setData(self.scatterData[ind[0], 0], self.scatterData[ind[0], 1])
             self.sigScatterClicked.emit(ind[0, 0])
 
@@ -353,7 +364,7 @@ class ClusteringWidget(QSplitter):
         brushes = [mkBrush(self.colorLUT[x, :]) for x in self.labels]
         # make plots
         if hasattr(self, 'scatterPlot'):
-            self.clusterScatterPlot.removeItem(self.scatterPlot)
+            self.clusterScatterPlot.plotItem.clearPlots()
         self.scatterPlot = self.clusterScatterPlot.plotItem.plot(self.clusterScatterPlot.scatterData, pen=None, symbol='o', symbolBrush=brushes)
         self.clusterScatterPlot.getViewBox().autoRange(padding=0.1)
         self.clusterScatterPlot.getNN()
@@ -389,7 +400,7 @@ class ClusteringWidget(QSplitter):
             img = np.zeros((self.imgShape[0], self.imgShape[1]))
             self.clusterImage.setImage(img=img)
         if hasattr(self, 'scatterPlot'):
-            self.clusterScatterPlot.removeItem(self.scatterPlot)
+            self.clusterScatterPlot.plotItem.clearPlots()
         self.rawSpecPlot.clear()
         self.clusterMeanPlot.clear()
 
@@ -432,7 +443,6 @@ class ClusteringWidget(QSplitter):
             self.imgShape = self.imgShapes[self.selectMapidx]
             self.data = self.dataSets[self.selectMapidx]
             self.rawSpecPlot.setHeader(self.currentHeader, 'spectra')
-            # reset custer image
-            img = np.zeros((self.imgShape[0], self.imgShape[1]))
-            self.clusterImage.setImage(img=img)
+            # reset custer image and plots
+            self.cleanUp()
             return True
