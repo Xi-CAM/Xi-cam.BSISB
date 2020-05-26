@@ -342,8 +342,6 @@ class PreprocessWidget(QSplitter):
             specidx = currentSpecItem.idx
         return specidx
 
-
-
     def updateSpecPlot(self):
         # get current map idx and selected spectrum idx
         specidx = self.getCurrentSpecid()
@@ -443,6 +441,12 @@ class PreprocessWidget(QSplitter):
             self.rawSpectra.clearAll()
             self.resultSpectra.clearAll()
             self.infoBox.setText('')
+
+    def cleanUp(self):
+        self.specItemModel.clear()
+        self.rawSpectra.clearAll()
+        self.resultSpectra.clearAll()
+        self.infoBox.setText('')
 
     def batchProcess(self):
         # get current map idx
