@@ -77,7 +77,7 @@ class SpectraPlotWidget(PlotWidget):
 
     def showSpectra(self, i=0):
         if (self._data is not None) and (i < len(self._data)):
-            self.clear()
+            self.getViewBox().clear()
             self._meanSpec = False
             self.spectrumInd = i
             self.plot(self.wavenumbers, self._data[i])
@@ -86,9 +86,16 @@ class SpectraPlotWidget(PlotWidget):
         self.selectedPixels = selectedPixels
         # print(selectedPixels)
 
+    def clearAll(self):
+        # remove legend
+        _legend = self.plotItem.legend
+        if (_legend is not None) and (_legend.scene() is not None):
+            _legend.scene().removeItem(_legend)
+        self.getViewBox().clear()
+
     def showMeanSpectra(self):
         self._meanSpec = True
-        self.clear()
+        self.getViewBox().clear()
         if self.selectedPixels is not None:
             n_spectra = len(self.selectedPixels)
             tmp = np.zeros((n_spectra, self.N_w))
@@ -198,13 +205,6 @@ class baselinePlotWidget(SpectraPlotWidget):
         self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
         self.addItem(self.txt)
         self.getMu()
-
-    def clearAll(self):
-        # remove legend
-        _legend = self.plotItem.legend
-        if (_legend is not None) and (_legend.scene() is not None):
-            _legend.scene().removeItem(_legend)
-        self.clear()
 
     def plotBase(self, dataGroup, plotType='raw'):
         """
