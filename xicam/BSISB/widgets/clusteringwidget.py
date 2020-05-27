@@ -105,6 +105,7 @@ class ClusteringParameters(ParameterTree):
     def updateClusterParams(self, name):
         self.sigParamChanged.emit(name)
 
+
 class ScatterPlotWidget(SpectraPlotWidget):
     sigScatterClicked = Signal(object)
 
@@ -143,51 +144,81 @@ class ScatterPlotWidget(SpectraPlotWidget):
         self.nbr = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(self.scatterData)
         msg.showMessage('NearestNeighbors model training is finished.')
 
+
 class ClusterSpectraWidget(SpectraPlotWidget):
     def __init__(self):
         super(ClusterSpectraWidget, self).__init__()
+        self._x = None
+        self.ymax, self.zmax = 0, 100
+        self._plots = []
 
-    def getEnergy(self, lineobject):
+    def getEnergy(self):
         if self._y is not None:
-            x_val = lineobject.value()
-            idx = val2ind(x_val, self.wavenumbers)
-            x_val = self.wavenumbers[idx]
+            x_val = self.line.value()
+            idx = val2ind(x_val, self._x)
+            x_val = self._x[idx]
             y_val = self._y[idx]
-            txt_html = toHtml(f'Cluster #{self.spectrumInd}')
-            txt_html += toHtml(f'X = {x_val: .2f}, Y = {y_val: .4f}')
+            txt_html = toHtml(f'X = {x_val: .2f}, Y = {y_val: .4f}')
             self.txt.setHtml(txt_html)
             self.cross.setData([x_val], [y_val])
 
     def setColors(self, colorLUT):
-        self.colorLUT = colorLUT
+        self.colorLUT = colorLUT.copy()
+        self.colorLUT[0, :] = np.ones(3) * 255
 
-    def showClusterSpectra(self, i=0):
-        if (self._data is not None) and (i < len(self._data)):
-            self.clear()
-            self.spectrumInd = i
-            self.plot(self.wavenumbers, self._data[i], pen=mkPen(self.colorLUT[i], width=4))
+    def plotClusterSpectra(self):
+        if self._data is not None:
+            if self._plots:
+                self.clearAll()
+                self._plots = []
+            self.ymax = 0
+            self.plotItem.addLegend(offset=(1, 1))
+            self.nSpectra = len(self._data)
+            for i in range(self.nSpectra):
+                name = 'Cluster #' + str(i)
+                tmp = self.plot(self.wavenumbers, self._data[i], pen=mkPen(self.colorLUT[i], width=2), name=name)
+                tmp.curve.setClickable(True)
+                tmp.curve.sigClicked.connect(partial(self.curveHighLight, i))
+                self._plots.append(tmp)
+            self.addItem(self.txt)
+
+    def curveHighLight(self, k):
+        for i in range(self.nSpectra):
+            if i == k:
+                self._plots[i].setPen(mkPen(self.colorLUT[k], width=6))
+                self._plots[i].setZValue(50)
+            else:
+                self._plots[i].setPen(mkPen(self.colorLUT[i], width=2))
+                self._plots[i].setZValue(0)
+        self._x, self._y = self._plots[k].getData()
+        ymin, ymax = np.min(self._y), np.max(self._y)
+        self.getViewBox().setYRange(ymin, ymax, padding=0.1)
+        r = self.txtPosRatio
+        self.txt.setPos(r * self._x[-1] + (1 - r) * self._x[0], 0.95 * ymax)
+        self.getEnergy()
 
     def plot(self, x, y, *args, **kwargs):
         # set up infinity line and get its position
-        self.plotItem.plot(x, y, *args, **kwargs)
+        plot_item = self.plotItem.plot(x, y, *args, **kwargs)
         self.addItem(self.line)
         self.addItem(self.cross)
         x_val = self.line.value()
-        if x_val == 0:
-            y_val = 0
-        else:
-            idx = val2ind(x_val, self.wavenumbers)
-            x_val = self.wavenumbers[idx]
-            y_val = y[idx]
-        txt_html = toHtml(f'Cluster #{self.spectrumInd}')
-        txt_html += toHtml(f'X = {x_val: .2f}, Y = {y_val: .4f}')
+        idx = val2ind(x_val, x)
+        x_val = x[idx]
+        y_val = y[idx]
+        txt_html = toHtml(f'X = {x_val: .2f}, Y = {y_val: .4f}')
         self.txt = TextItem(html=txt_html, anchor=(0, 0))
+        self.txt.setZValue(self.zmax - 1)
+        self.cross.setData([x_val], [y_val])
+        self.cross.setZValue(self.zmax)
         ymax = np.max(y)
-        self._y = y
+        if ymax > self.ymax:
+            self.ymax = ymax
+        self._x, self._y = x, y
         r = self.txtPosRatio
         self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
-        self.cross.setData([x_val], [y_val])
-        self.addItem(self.txt)
+        return plot_item
+
 
 class ClusteringWidget(QSplitter):
     def __init__(self, headermodel, selectionmodel):
@@ -335,14 +366,14 @@ class ClusteringWidget(QSplitter):
         # update cluster image
         self.cluster_map = self.labels.reshape(self.imgShape[0], self.imgShape[1])
         self.cluster_map = np.flipud(self.cluster_map)
-        self.clusterImage.setImage(self.cluster_map, levels=[0, n_clusters-1])
+        self.clusterImage.setImage(self.cluster_map, levels=[0, n_clusters - 1])
         # self.clusterImage.setImage(self.cluster_map)
         self.clusterImage._image = self.cluster_map
         self.clusterImage.rc2ind = self.rc2ind
         self.clusterImage.row, self.clusterImage.col = self.imgShape[0], self.imgShape[1]
         self.clusterImage.txt.setPos(self.clusterImage.col, 0)
         self.clusterImage.cross.show()
-        #update cluster mean
+        # update cluster mean
         mean_spectra = []
         for ii in range(n_clusters):
             sel = (self.labels == ii)
@@ -352,6 +383,7 @@ class ClusteringWidget(QSplitter):
         self.clusterMeanPlot.setColors(self.colorLUT)
         self.clusterMeanPlot._data = self.mean_spectra
         self.clusterMeanPlot.wavenumbers = self.wavenumbers_select
+        self.clusterMeanPlot.plotClusterSpectra()
         # update scatter plot
         self.updateScatterPlot()
 
@@ -359,13 +391,15 @@ class ClusteringWidget(QSplitter):
         if (self.low_dim is None) or (self.labels is None):
             return
         # get scatter x, y values
-        self.clusterScatterPlot.scatterData = self.low_dim[:, [self.parameter['X Component'] - 1, self.parameter['Y Component'] - 1]]
+        self.clusterScatterPlot.scatterData = self.low_dim[:,
+                                              [self.parameter['X Component'] - 1, self.parameter['Y Component'] - 1]]
         # get colormapings
         brushes = [mkBrush(self.colorLUT[x, :]) for x in self.labels]
         # make plots
         if hasattr(self, 'scatterPlot'):
             self.clusterScatterPlot.plotItem.clearPlots()
-        self.scatterPlot = self.clusterScatterPlot.plotItem.plot(self.clusterScatterPlot.scatterData, pen=None, symbol='o', symbolBrush=brushes)
+        self.scatterPlot = self.clusterScatterPlot.plotItem.plot(self.clusterScatterPlot.scatterData, pen=None,
+                                                                 symbol='o', symbolBrush=brushes)
         self.clusterScatterPlot.getViewBox().autoRange(padding=0.1)
         self.clusterScatterPlot.getNN()
 
@@ -380,17 +414,18 @@ class ClusteringWidget(QSplitter):
     def showClusterMean(self, i):
         if self.mean_spectra is None:
             return
-        self.clusterMeanPlot.showClusterSpectra(self.labels[i])
+        self.clusterMeanPlot.curveHighLight(self.labels[i])
 
     def setImageCross(self, ind):
         row, col = self.ind2rc[ind]
         # update cross
-        self.clusterImage.cross.setData([col + 0.5], [self.imgShape[0] - row - 0.5],)
+        self.clusterImage.cross.setData([col + 0.5], [self.imgShape[0] - row - 0.5])
         # update text
         self.clusterImage.txt.setHtml(toHtml(f'Point: #{ind}', size=8)
-                             + toHtml(f'X: {col}', size=8)
-                             + toHtml(f'Y: {row}', size=8)
-                             + toHtml(f'Val: {self.clusterImage._image[self.imgShape[0] - row -1, col] :d}', size=8))
+                                      + toHtml(f'X: {col}', size=8)
+                                      + toHtml(f'Y: {row}', size=8)
+                                      + toHtml(f'Val: {self.clusterImage._image[self.imgShape[0] - row - 1, col] :d}',
+                                               size=8))
 
     def removeSpec(self):
         pass
@@ -401,8 +436,8 @@ class ClusteringWidget(QSplitter):
             self.clusterImage.setImage(img=img)
         if hasattr(self, 'scatterPlot'):
             self.clusterScatterPlot.plotItem.clearPlots()
-        self.rawSpecPlot.clear()
-        self.clusterMeanPlot.clear()
+        self.rawSpecPlot.clearAll()
+        self.clusterMeanPlot.clearAll()
 
     def setHeader(self, field: str):
         self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
