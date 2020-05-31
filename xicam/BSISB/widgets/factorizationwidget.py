@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from xicam.BSISB.widgets.uiwidget import MsgBox
 from xicam.BSISB.widgets.imshowwidget import SlimImageView
+from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from lbl_ir.data_objects.ir_map import val2ind
 from lbl_ir.tasks.preprocessing import data_prep
 from lbl_ir.tasks.NMF.multi_set_analyses import aggregate_data
@@ -23,7 +24,6 @@ from pyqtgraph.parametertree import ParameterTree, Parameter
 
 
 class FactorizationParameters(ParameterTree):
-    sigPCA = Signal(object)
 
     def __init__(self, headermodel: QStandardItemModel, selectionmodel: QItemSelectionModel):
         super(FactorizationParameters, self).__init__()
@@ -38,8 +38,6 @@ class FactorizationParameters(ParameterTree):
                                              {'name': "Components",
                                               'value': 4,
                                               'type': 'int'},
-                                             {'name': "Calculate",
-                                              'type': 'action'},
                                              {'name': "Map 1 Component",
                                               'values': [1, 2, 3, 4],
                                               'value': 1,
@@ -66,9 +64,7 @@ class FactorizationParameters(ParameterTree):
                                              {'name': "C regressor",
                                               'values': ['OLS', 'NNLS'],
                                               'value': 'OLS',
-                                              'type': 'list'},
-                                             {'name': "Save results",
-                                              'type': 'action'}
+                                              'type': 'list'}
                                              ])
 
         self.setParameters(self.parameter, showTop=False)
@@ -88,43 +84,369 @@ class FactorizationParameters(ParameterTree):
                 item.displayLabel.setFont(font)
                 item.widget.setMaximumHeight(40)
         # connect signals
-        self.parameter.child('Calculate').sigActivated.connect(self.calculate)
-        self.parameter.child('Save results').sigActivated.connect(self.saveResults)
         self.parameter.child('Components').sigValueChanged.connect(self.setNumComponents)
         self.parameter.child('Method').sigValueChanged.connect(self.setMethod)
         self.parameter.child('C regressor').hide()
 
     def setMethod(self):
         if self.parameter['Method'] == 'PCA':
-            self.method = 'PCA'
-            self.field = 'spectra'
             self.parameter.child('Normalization').setToDefault()
             self.parameter.child('Normalization').show()
             self.parameter.child('C regressor').hide()
         elif self.parameter['Method'] == 'NMF':
-            self.method = 'NMF'
-            self.field = 'volume'
             self.parameter.child('Normalization').hide()
             self.parameter.child('C regressor').hide()
         elif self.parameter['Method'] == 'MCR':
-            self.method = 'MCR'
-            self.field = 'spectra'
             self.parameter.child('Normalization').hide()
             self.parameter.child('C regressor').show()
 
-    def setHeader(self, wavenumbers, imgShapes, rc2indList, ind2rcList):
-        # get all headers selected
-        # headers = [self.headermodel.itemFromIndex(i).header for i in self.selectionmodel.selectedRows()]
-        self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
+    def setNumComponents(self):
+        N = self.parameter['Components']
 
-        self.wavenumbers = wavenumbers
-        self.N_w = len(self.wavenumbers)
-        self.imgShapes = imgShapes
-        self.rc2indList = rc2indList
-        self.ind2rcList = ind2rcList
+        for i in range(4):
+            param = self.parameter.child(f'Map {i + 1} Component')
+            param.setLimits(list(range(1, N + 1)))
+
+class ComponentPlotWidget(SpectraPlotWidget):
+    def __init__(self, *args, **kwargs):
+        super(ComponentPlotWidget, self).__init__(linePos=800, txtPosRatio=0.35, *args, **kwargs)
+        self.cross = PlotDataItem([800], [0], symbolBrush=(255, 255, 255), symbolPen=(255, 255, 255),
+                                  symbol='+', symbolSize=25)
+        self._x, self._y = None, None
+        self.ymax, self.zmax = 0, 100
+
+    def getEnergy(self):
+        if self._y is not None:
+            x_val = self.line.value()
+            idx = val2ind(x_val, self._x)
+            x_val = self._x[idx]
+            y_val = self._y[idx]
+            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                                 X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+            self.txt.setHtml(txt_html)
+            self.cross.setData([x_val], [y_val])
+
+    def plot(self, x, y, *args, **kwargs):
+        # set up infinity line and get its position
+        plot_item = self.plotItem.plot(x, y, *args, **kwargs)
+        self.addItem(self.line)
+        self.addItem(self.cross)
+        x_val = self.line.value()
+        idx = val2ind(x_val, x)
+        x_val = x[idx]
+        y_val = y[idx]
+        txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
+                                     X = {x_val: .2f}, Y = {y_val: .4f}</div>'
+        self.txt.setHtml(txt_html)
+        self.txt.setZValue(self.zmax - 1)
+        self.cross.setData([x_val], [y_val])
+        self.cross.setZValue(self.zmax)
+        ymax = max(y)
+        if ymax > self.ymax:
+            self.ymax = ymax
+        self._x, self._y = x, y
+        r = self.txtPosRatio
+        self.txt.setPos(r * x[-1] + (1 - r) * x[0], self.ymax)
+        self.addItem(self.txt)
+        return plot_item
+
+class FactorizationWidget(QSplitter):
+    sigPCA = Signal(object)
+
+    def __init__(self, headermodel, selectionmodel):
+        super(FactorizationWidget, self).__init__()
+        self.headermodel = headermodel
+        self.selectionmodel = selectionmodel
+        self.selectionmodel.selectionChanged.connect(self.updateMap)
+        self.selectionmodel.selectionChanged.connect(self.updateRoiMask)
+        self.selectMapIdx = 0
+
+        self.rightsplitter = QSplitter()
+        self.rightsplitter.setOrientation(Qt.Vertical)
+        self.gridwidget = QWidget()
+        self.gridlayout = QGridLayout()
+        self.gridwidget.setLayout(self.gridlayout)
+        self.display = QSplitter()
+
+        # self.componentSpectra = PlotWidget()
+        self.componentSpectra = ComponentPlotWidget()
+        self._plotLegends = self.componentSpectra.addLegend()
+        self._colors = ['r', 'g', 'm', 'y', 'c', 'b', 'w']  # color for plots
+
+        # self.spectraROI = PlotWidget()
+        self.NWimage = SlimImageView()
+        self.NEimage = SlimImageView()
+        self.SWimage = SlimImageView()
+        self.SEimage = SlimImageView()
+        # setup ROI item
+        sideLen = 10
+        self.roiList = []
+        self.maskList = []
+        self.selectMaskList = []
+        self._imageDict = {0: 'NWimage', 1: 'NEimage', 2: 'SWimage', 3: 'SEimage'}
+        for i in range(4):
+            getattr(self, self._imageDict[i]).setPredefinedGradient("viridis")
+            getattr(self, self._imageDict[i]).getHistogramWidget().setMinimumWidth(5)
+            getattr(self, self._imageDict[i]).view.invertY(True)
+            getattr(self, self._imageDict[i]).imageItem.setOpts(axisOrder="row-major")
+            # set up roi item
+            roi = PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
+            roi.hide()
+            self.roiInitState = roi.getState()
+            self.roiList.append(roi)
+            # set up mask item
+            maskItem = ImageItem(np.ones((1,1)), axisOrder="row-major", autoLevels=True, opacity=0.3)
+            maskItem.hide()
+            self.maskList.append(maskItem)
+            # set up select mask item
+            selectMaskItem = ImageItem(np.ones((1, 1)), axisOrder="row-major", autoLevels=True, opacity=0.3,
+                                          lut = np.array([[0, 0, 0], [255, 0, 0]]))
+            selectMaskItem.hide()
+            self.selectMaskList.append(selectMaskItem)
+            # set up image title
+            getattr(self, self._imageDict[i]).imageTitle = TextItem()
+            getattr(self, self._imageDict[i]).view.addItem(roi)
+            getattr(self, self._imageDict[i]).view.addItem(maskItem)
+            getattr(self, self._imageDict[i]).view.addItem(selectMaskItem)
+            getattr(self, self._imageDict[i]).view.addItem(getattr(self, self._imageDict[i]).imageTitle)
+
+        self.parametertree = FactorizationParameters(headermodel, selectionmodel)
+        self.parameter = self.parametertree.parameter
+        for i in range(4):
+            self.parameter.child(f'Map {i + 1} Component').sigValueChanged.connect(
+                partial(self.updateComponents, i))
+
+        self.addWidget(self.display)
+        self.addWidget(self.rightsplitter)
+        self.display.addWidget(self.gridwidget)
+        self.display.addWidget(self.componentSpectra)
+        # self.display.addWidget(self.spectraROI)
+        self.gridlayout.addWidget(self.NWimage, 0, 0, 1, 1)
+        self.gridlayout.addWidget(self.NEimage, 0, 1, 1, 1)
+        self.gridlayout.addWidget(self.SWimage, 1, 0, 1, 1)
+        self.gridlayout.addWidget(self.SEimage, 1, 1, 1, 1)
+
+        self.setOrientation(Qt.Horizontal)
+        self.display.setOrientation(Qt.Vertical)
+
+        # buttons layout
+        self.buttons = QWidget()
+        self.buttonlayout = QGridLayout()
+        self.buttons.setLayout(self.buttonlayout)
+        # set up buttons
+        self.fontSize = 12
+        font = QFont("Helvetica [Cronyx]", self.fontSize)
+        self.computeBtn = QPushButton()
+        self.computeBtn.setText('Decompose')
+        self.computeBtn.setFont(font)
+        self.saveBtn = QPushButton()
+        self.saveBtn.setText('Save Results')
+        self.saveBtn.setFont(font)
+        # add all buttons
+        self.buttonlayout.addWidget(self.computeBtn)
+        self.buttonlayout.addWidget(self.saveBtn)
+
+        # Headers listview
+        self.headerlistview = QListView()
+        self.headerlistview.setModel(headermodel)
+        self.headerlistview.setSelectionModel(selectionmodel)  # This might do weird things in the map view?
+        self.headerlistview.setSelectionMode(QListView.SingleSelection)
+        # add title to list view
+        self.fontSize = 12
+        font = QFont("Helvetica [Cronyx]", self.fontSize)
+        self.mapListWidget = QWidget()
+        self.listLayout = QVBoxLayout()
+        self.mapListWidget.setLayout(self.listLayout)
+        mapListTitle = QLabel('Maps list')
+        mapListTitle.setFont(font)
+        self.listLayout.addWidget(mapListTitle)
+        self.listLayout.addWidget(self.headerlistview)
+
+        # adjust right splitter
+        self.rightsplitter.addWidget(self.parametertree)
+        self.rightsplitter.addWidget(self.buttons)
+        self.rightsplitter.addWidget(self.mapListWidget)
+        self.rightsplitter.setSizes([300, 50, 50])
+
+        #connect signals
+        self.computeBtn.clicked.connect(self.calculate)
+        self.saveBtn.clicked.connect(self.saveResults)
+        self.sigPCA.connect(self.showComponents)
+
+    def updateRoiMask(self):
+        if self.selectionmodel.hasSelection():
+            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        elif self.headermodel.rowCount() > 0:
+            self.selectMapIdx = 0
+        else:
+            return
+        # update roi
+        try:
+            roiState = self.headermodel.item(self.selectMapIdx).roiState
+            for i in range(4):
+                if roiState[0]: #roi on
+                    self.roiList[i].show()
+                else:
+                    self.roiList[i].hide()
+                # update roi state
+                self.roiList[i].blockSignals(True)
+                self.roiList[i].setState(roiState[1])
+                self.roiList[i].blockSignals(False)
+        except Exception:
+            for i in range(4):
+                self.roiList[i].hide()
+        # update automask
+        try:
+            maskState = self.headermodel.item(self.selectMapIdx).maskState
+            for i in range(4):
+                self.maskList[i].setImage(maskState[1])
+                if maskState[0]:  # automask on
+                    self.maskList[i].show()
+                else:
+                    self.maskList[i].hide()
+        except Exception:
+            pass
+        # update selectMask
+        try:
+            selectMaskState = self.headermodel.item(self.selectMapIdx).selectState
+            for i in range(4):
+                self.selectMaskList[i].setImage(selectMaskState[1])
+                if selectMaskState[0]:  # selectmask on
+                    self.selectMaskList[i].show()
+                else:
+                    self.selectMaskList[i].hide()
+        except Exception:
+            pass
+
+    def updateComponents(self, i):
+        # i is imageview/window number
+        # component_index is the PCA component index
+        component_index = self.parameter[f'Map {i + 1} Component']
+        # update scoreplots on view i
+        if hasattr(self, '_data_fac') and (self._data_fac is not None):
+            # update map
+            self.drawMap(component_index, i)
+
+        # update PCA components
+        if hasattr(self, '_plots'):
+            # update plots
+            name = self.parameter['Method'] + str(component_index)
+            self._plots[i].setData(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name)
+            # update legend label
+            sample, label = self._plotLegends.items[i]
+            label.setText(name)
+
+    def updateMap(self):
+        if self.selectionmodel.hasSelection():
+            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        elif self.headermodel.rowCount() > 0:
+            self.selectMapIdx = 0
+        else:
+            return
+
+        if hasattr(self, '_data_fac') and (self._data_fac is not None):
+            if len(self._dataRowSplit) < self.selectMapIdx + 2:  # some maps are not included in the factorization calculation
+                msg.logMessage('One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
+                    msg.ERROR)
+            else:
+                for i in range(4):
+                    component_index = self.parameter[f'Map {i + 1} Component']
+                    # update map
+                    self.drawMap(component_index, i)
+        elif hasattr(self, 'imgShapes') and (self.selectMapIdx < len(self.imgShapes)):  #clear maps
+            for i in range(4):
+                img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
+                getattr(self, self._imageDict[i]).setImage(img=img)
+
+    def showComponents(self, fac_obj):
+        # get map ROI selected region
+        self.selectedPixelsList = [self.headermodel.item(i).selectedPixels for i in range(self.headermodel.rowCount())]
+        # clear plots and legends
+        # self.componentSpectra.plotItem.clearPlots()
+        self.componentSpectra.clearAll()
+        self.componentSpectra.ymax = 0
+        # for sample, label in self._plotLegends.items[:]:
+        #     self._plotLegends.removeItem(label.text)
+
+        self.wavenumbers, self._fac, self._data_fac, self._dataRowSplit = fac_obj[0], fac_obj[1], fac_obj[2], fac_obj[3]
+
+        if self._fac is not None:
+            self._plots = []
+            for i in range(4):
+                component_index = self.parameter[f'Map {i + 1} Component']
+                name = self.parameter['Method'] + str(component_index)
+                # show loading plots
+                tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name,
+                                                 pen=mkPen(self._colors[i], width=2))
+                tmp.curve.setClickable(True)
+                tmp.curve.sigClicked.connect(partial(self.curveHighLight, i))
+                self._plots.append(tmp)
+                # show score plots
+                self.drawMap(component_index, i)
+            # update the last image and loading plots as a recalculation complete signal
+            N = self.parameter['Components']
+            self.parameter.child(f'Map 4 Component').setValue(N)
+        # clear maps
+        else:
+            tab_idx = self.headermodel.rowCount() - 1
+            if tab_idx >= 0:
+                for i in range(4):
+                    img = np.zeros((self.imgShapes[tab_idx][0], self.imgShapes[tab_idx][1]))
+                    getattr(self, self._imageDict[i]).setImage(img=img)
+
+    def drawMap(self, component_index, i):
+        # i is imageview/window number
+        data_slice = self._data_fac[self._dataRowSplit[self.selectMapIdx]:self._dataRowSplit[self.selectMapIdx + 1],
+                     component_index - 1]
+        # draw map
+        if self.selectedPixelsList[self.selectMapIdx] is None:  # full map
+            img = data_slice.reshape(self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1])
+        elif self.selectedPixelsList[self.selectMapIdx].size == 0:  # empty ROI
+            img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
+        else:
+            img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
+            img[self.selectedPixelsList[self.selectMapIdx][:, 0], self.selectedPixelsList[self.selectMapIdx][:,
+                                                               1]] = data_slice
+        img = np.flipud(img)
+        getattr(self, self._imageDict[i]).setImage(img=img)
+        # set imageTitle
+        imageTitle = getattr(self, self._imageDict[i]).imageTitle
+        title = self.parameter['Method'] + str(component_index)
+        imageTitle.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 8pt">{title}</div>')
+        imageTitle.setPos(0, -5)
+
+    def curveHighLight(self, k):
+        for i in range(4):
+            if i == k:
+                self._plots[i].setPen(mkPen(self._colors[k], width=6))
+                self._plots[i].setZValue(50)
+            else:
+                self._plots[i].setPen(mkPen(self._colors[i], width=2))
+                self._plots[i].setZValue(0)
+        self.componentSpectra._x, self.componentSpectra._y = self._plots[k].getData()
+        self.componentSpectra.getEnergy()
+
+    def setHeader(self, field: str):
+
+        self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
+        self.field = field
+        wavenum_align = []
+        self.imgShapes = []
+        self.rc2indList = []
+        self.ind2rcList = []
         self._dataSets = {'spectra': [], 'volume': []}
 
+        # get wavenumbers, imgShapes
         for header in self.headers:
+            dataEvent = next(header.events(fields=[field]))
+            self.wavenumbers = dataEvent['wavenumbers']
+            self.N_w = len(self.wavenumbers)
+            wavenum_align.append(
+                (round(self.wavenumbers[0]), self.N_w))  # append (first wavenum value, wavenum length)
+            self.imgShapes.append(dataEvent['imgShape'])
+            self.rc2indList.append(dataEvent['rc_index'])
+            self.ind2rcList.append(dataEvent['index_rc'])
+            # load data
             data = None
             try:  # spectra datasets
                 data = header.meta_array('spectra')
@@ -134,19 +456,32 @@ class FactorizationParameters(ParameterTree):
                 self._dataSets['spectra'].append(data)
             # NMF path sets
             volumeEvent = next(header.events(fields=['volume']))
-            path = volumeEvent['path'] # readin filepath
+            path = volumeEvent['path']  # readin filepath
             self._dataSets['volume'].append(path)
 
-    def setNumComponents(self):
-        N = self.parameter['Components']
+        # init maps
+        if len(self.imgShapes) > 0:
+            self.showComponents((self.wavenumbers, None, None, None))
 
-        for i in range(4):
-            param = self.parameter.child(f'Map {i + 1} Component')
-            param.setLimits(list(range(1, N + 1)))
+        if wavenum_align and (wavenum_align.count(wavenum_align[0]) != len(wavenum_align)):
+            MsgBox('Length of wavenumber arrays of displayed maps are not equal. \n'
+                   'Perform PCA or NMF on these maps will lead to error.','warn')
+
+        # self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList)
 
     def calculate(self):
 
         N = self.parameter['Components']
+        #set decompose method
+        if self.parameter['Method'] == 'PCA':
+            self.method = 'PCA'
+            self.field = 'spectra'
+        elif self.parameter['Method'] == 'NMF':
+            self.method = 'NMF'
+            self.field = 'volume'
+        elif self.parameter['Method'] == 'MCR':
+            self.method = 'MCR'
+            self.field = 'spectra'
 
         if hasattr(self, '_dataSets'):
             wavROIList = []
@@ -343,333 +678,4 @@ class FactorizationParameters(ParameterTree):
             MsgBox(name + ' components successfully saved!')
         else:
             MsgBox('No factorization components available.')
-
-class ComponentPlotWidget(PlotWidget):
-    def __init__(self, *args, **kwargs):
-        super(ComponentPlotWidget, self).__init__(*args, **kwargs)
-        self.line = InfiniteLine(pos=800, movable=True)
-        self.line.sigPositionChanged.connect(self.getEnergy)
-        self.addItem(self.line)
-        self.cross = PlotDataItem([800], [0], symbolBrush=(255, 255, 255), symbolPen=(255, 255, 255), symbol='+', symbolSize=25)
-        self.addItem(self.cross)
-        self.txt = TextItem()
-        self.getViewBox().invertX(True)
-        self._x, self._y = None, None
-        self.ymax, self.zmax = 0, 100
-
-    def getEnergy(self):
-        if self._y is not None:
-            x_val = self.line.value()
-            idx = val2ind(x_val, self._x)
-            x_val = self._x[idx]
-            y_val = self._y[idx]
-            txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                                                 X = {x_val: .2f}, Y = {y_val: .4f}</div>'
-            self.txt.setHtml(txt_html)
-            self.cross.setData([x_val], [y_val])
-
-    def plot(self, x, y, *args, **kwargs):
-        # set up infinity line and get its position
-        plot_item = self.plotItem.plot(x, y, *args, **kwargs)
-        self.addItem(self.line)
-        self.addItem(self.cross)
-        x_val = self.line.value()
-        idx = val2ind(x_val, x)
-        x_val = x[idx]
-        y_val = y[idx]
-        txt_html = f'<div style="text-align: center"><span style="color: #FFF; font-size: 12pt">\
-                                     X = {x_val: .2f}, Y = {y_val: .4f}</div>'
-        self.txt.setHtml(txt_html)
-        self.txt.setZValue(self.zmax - 1)
-        self.cross.setData([x_val], [y_val])
-        self.cross.setZValue(self.zmax)
-        ymax = max(y)
-        if ymax > self.ymax:
-            self.ymax = ymax
-        self._x, self._y = x, y
-        self.txt.setPos(x[0], 0.95 * self.ymax)
-        self.addItem(self.txt)
-        return plot_item
-
-class FactorizationWidget(QSplitter):
-    def __init__(self, headermodel, selectionmodel):
-        super(FactorizationWidget, self).__init__()
-        self.headermodel = headermodel
-        self.selectionmodel = selectionmodel
-        self.selectionmodel.selectionChanged.connect(self.updateMap)
-        self.selectionmodel.selectionChanged.connect(self.updateRoiMask)
-        self.selectMapIdx = 0
-
-        self.rightsplitter = QSplitter()
-        self.rightsplitter.setOrientation(Qt.Vertical)
-        self.gridwidget = QWidget()
-        self.gridlayout = QGridLayout()
-        self.gridwidget.setLayout(self.gridlayout)
-        self.display = QSplitter()
-
-        # self.componentSpectra = PlotWidget()
-        self.componentSpectra = ComponentPlotWidget()
-        self._plotLegends = self.componentSpectra.addLegend()
-        self._colors = ['r', 'g', 'm', 'y', 'c', 'b', 'w']  # color for plots
-
-        # self.spectraROI = PlotWidget()
-        self.NWimage = SlimImageView()
-        self.NEimage = SlimImageView()
-        self.SWimage = SlimImageView()
-        self.SEimage = SlimImageView()
-        # setup ROI item
-        sideLen = 10
-        self.roiList = []
-        self.maskList = []
-        self.selectMaskList = []
-        self._imageDict = {0: 'NWimage', 1: 'NEimage', 2: 'SWimage', 3: 'SEimage'}
-        for i in range(4):
-            getattr(self, self._imageDict[i]).setPredefinedGradient("viridis")
-            getattr(self, self._imageDict[i]).getHistogramWidget().setMinimumWidth(5)
-            getattr(self, self._imageDict[i]).view.invertY(True)
-            getattr(self, self._imageDict[i]).imageItem.setOpts(axisOrder="row-major")
-            # set up roi item
-            roi = PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
-            roi.hide()
-            self.roiInitState = roi.getState()
-            self.roiList.append(roi)
-            # set up mask item
-            maskItem = ImageItem(np.ones((1,1)), axisOrder="row-major", autoLevels=True, opacity=0.3)
-            maskItem.hide()
-            self.maskList.append(maskItem)
-            # set up select mask item
-            selectMaskItem = ImageItem(np.ones((1, 1)), axisOrder="row-major", autoLevels=True, opacity=0.3,
-                                          lut = np.array([[0, 0, 0], [255, 0, 0]]))
-            selectMaskItem.hide()
-            self.selectMaskList.append(selectMaskItem)
-            # set up image title
-            getattr(self, self._imageDict[i]).imageTitle = TextItem()
-            getattr(self, self._imageDict[i]).view.addItem(roi)
-            getattr(self, self._imageDict[i]).view.addItem(maskItem)
-            getattr(self, self._imageDict[i]).view.addItem(selectMaskItem)
-            getattr(self, self._imageDict[i]).view.addItem(getattr(self, self._imageDict[i]).imageTitle)
-
-        self.parametertree = FactorizationParameters(headermodel, selectionmodel)
-        self.parameter = self.parametertree.parameter
-        self.parametertree.sigPCA.connect(self.showComponents)
-        for i in range(4):
-            self.parameter.child(f'Map {i + 1} Component').sigValueChanged.connect(
-                partial(self.updateComponents, i))
-
-        self.addWidget(self.display)
-        self.addWidget(self.rightsplitter)
-        self.display.addWidget(self.gridwidget)
-        self.display.addWidget(self.componentSpectra)
-        # self.display.addWidget(self.spectraROI)
-        self.gridlayout.addWidget(self.NWimage, 0, 0, 1, 1)
-        self.gridlayout.addWidget(self.NEimage, 0, 1, 1, 1)
-        self.gridlayout.addWidget(self.SWimage, 1, 0, 1, 1)
-        self.gridlayout.addWidget(self.SEimage, 1, 1, 1, 1)
-
-        self.setOrientation(Qt.Horizontal)
-        self.display.setOrientation(Qt.Vertical)
-
-        # Headers listview
-        self.headerlistview = QListView()
-        self.headerlistview.setModel(headermodel)
-        self.headerlistview.setSelectionModel(selectionmodel)  # This might do weird things in the map view?
-        self.headerlistview.setSelectionMode(QListView.SingleSelection)
-        # add title to list view
-        self.fontSize = 12
-        font = QFont("Helvetica [Cronyx]", self.fontSize)
-        self.mapListWidget = QWidget()
-        self.listLayout = QVBoxLayout()
-        self.mapListWidget.setLayout(self.listLayout)
-        mapListTitle = QLabel('Maps list')
-        mapListTitle.setFont(font)
-        self.listLayout.addWidget(mapListTitle)
-        self.listLayout.addWidget(self.headerlistview)
-
-        # adjust right splitter
-        self.rightsplitter.addWidget(self.parametertree)
-        self.rightsplitter.addWidget(self.mapListWidget)
-        self.rightsplitter.setSizes([200, 50])
-
-    def updateRoiMask(self):
-        if self.selectionmodel.hasSelection():
-            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
-        elif self.headermodel.rowCount() > 0:
-            self.selectMapIdx = 0
-        else:
-            return
-        # update roi
-        try:
-            roiState = self.headermodel.item(self.selectMapIdx).roiState
-            for i in range(4):
-                if roiState[0]: #roi on
-                    self.roiList[i].show()
-                else:
-                    self.roiList[i].hide()
-                # update roi state
-                self.roiList[i].blockSignals(True)
-                self.roiList[i].setState(roiState[1])
-                self.roiList[i].blockSignals(False)
-        except Exception:
-            for i in range(4):
-                self.roiList[i].hide()
-        # update automask
-        try:
-            maskState = self.headermodel.item(self.selectMapIdx).maskState
-            for i in range(4):
-                self.maskList[i].setImage(maskState[1])
-                if maskState[0]:  # automask on
-                    self.maskList[i].show()
-                else:
-                    self.maskList[i].hide()
-        except Exception:
-            pass
-        # update selectMask
-        try:
-            selectMaskState = self.headermodel.item(self.selectMapIdx).selectState
-            for i in range(4):
-                self.selectMaskList[i].setImage(selectMaskState[1])
-                if selectMaskState[0]:  # selectmask on
-                    self.selectMaskList[i].show()
-                else:
-                    self.selectMaskList[i].hide()
-        except Exception:
-            pass
-
-    def updateComponents(self, i):
-        # i is imageview/window number
-        # component_index is the PCA component index
-        component_index = self.parameter[f'Map {i + 1} Component']
-        # update scoreplots on view i
-        if hasattr(self, '_data_fac') and (self._data_fac is not None):
-            # update map
-            self.drawMap(component_index, i)
-
-        # update PCA components
-        if hasattr(self, '_plots'):
-            # update plots
-            name = self.parameter['Method'] + str(component_index)
-            self._plots[i].setData(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name)
-            # update legend label
-            sample, label = self._plotLegends.items[i]
-            label.setText(name)
-
-    def updateMap(self):
-        if self.selectionmodel.hasSelection():
-            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
-        elif self.headermodel.rowCount() > 0:
-            self.selectMapIdx = 0
-        else:
-            return
-
-        if hasattr(self, '_data_fac') and (self._data_fac is not None):
-            if len(self._dataRowSplit) < self.selectMapIdx + 2:  # some maps are not included in the factorization calculation
-                msg.logMessage('One or more maps are not included in the factorization dataset. Please click "calculate" to re-compute factors.',
-                    msg.ERROR)
-            else:
-                for i in range(4):
-                    component_index = self.parameter[f'Map {i + 1} Component']
-                    # update map
-                    self.drawMap(component_index, i)
-        elif hasattr(self, 'imgShapes') and (self.selectMapIdx < len(self.imgShapes)):  #clear maps
-            for i in range(4):
-                img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
-                getattr(self, self._imageDict[i]).setImage(img=img)
-
-    def showComponents(self, fac_obj):
-        # get map ROI selected region
-        self.selectedPixelsList = [self.headermodel.item(i).selectedPixels for i in range(self.headermodel.rowCount())]
-        # clear plots and legends
-        self.componentSpectra.plotItem.clearPlots()
-        self.componentSpectra.ymax = 0
-        for sample, label in self._plotLegends.items[:]:
-            self._plotLegends.removeItem(label.text)
-
-        self.wavenumbers, self._fac, self._data_fac, self._dataRowSplit = fac_obj[0], fac_obj[1], fac_obj[2], fac_obj[3]
-
-        if self._fac is not None:
-            self._plots = []
-            for i in range(4):
-                component_index = self.parameter[f'Map {i + 1} Component']
-                name = self.parameter['Method'] + str(component_index)
-                # show loading plots
-                tmp = self.componentSpectra.plot(self.wavenumbers, self._fac.components_[component_index - 1, :], name=name,
-                                                 pen=mkPen(self._colors[i], width=2))
-                tmp.curve.setClickable(True)
-                tmp.curve.sigClicked.connect(partial(self.curveHighLight, i))
-                self._plots.append(tmp)
-                # show score plots
-                self.drawMap(component_index, i)
-            # update the last image and loading plots as a recalculation complete signal
-            N = self.parameter['Components']
-            self.parameter.child(f'Map 4 Component').setValue(N)
-        # clear maps
-        else:
-            tab_idx = self.headermodel.rowCount() - 1
-            if tab_idx >= 0:
-                for i in range(4):
-                    img = np.zeros((self.imgShapes[tab_idx][0], self.imgShapes[tab_idx][1]))
-                    getattr(self, self._imageDict[i]).setImage(img=img)
-
-    def drawMap(self, component_index, i):
-        # i is imageview/window number
-        data_slice = self._data_fac[self._dataRowSplit[self.selectMapIdx]:self._dataRowSplit[self.selectMapIdx + 1],
-                     component_index - 1]
-        # draw map
-        if self.selectedPixelsList[self.selectMapIdx] is None:  # full map
-            img = data_slice.reshape(self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1])
-        elif self.selectedPixelsList[self.selectMapIdx].size == 0:  # empty ROI
-            img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
-        else:
-            img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
-            img[self.selectedPixelsList[self.selectMapIdx][:, 0], self.selectedPixelsList[self.selectMapIdx][:,
-                                                               1]] = data_slice
-        img = np.flipud(img)
-        getattr(self, self._imageDict[i]).setImage(img=img)
-        # set imageTitle
-        imageTitle = getattr(self, self._imageDict[i]).imageTitle
-        title = self.parameter['Method'] + str(component_index)
-        imageTitle.setHtml(f'<div style="text-align: center"><span style="color: #FFF; font-size: 8pt">{title}</div>')
-        imageTitle.setPos(0, -5)
-
-    def curveHighLight(self, k):
-        for i in range(4):
-            if i == k:
-                self._plots[i].setPen(mkPen(self._colors[k], width=6))
-                self._plots[i].setZValue(50)
-            else:
-                self._plots[i].setPen(mkPen(self._colors[i], width=2))
-                self._plots[i].setZValue(0)
-        self.componentSpectra._x, self.componentSpectra._y = self._plots[k].getData()
-        self.componentSpectra.getEnergy()
-
-    def setHeader(self, field: str):
-
-        self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
-        self.field = field
-        wavenum_align = []
-        self.imgShapes = []
-        self.rc2indList = []
-        self.ind2rcList = []
-
-        # get wavenumbers, imgShapes
-        for header in self.headers:
-            dataEvent = next(header.events(fields=[field]))
-            self.wavenumbers = dataEvent['wavenumbers']
-            wavenum_align.append(
-                (round(self.wavenumbers[0]), len(self.wavenumbers)))  # append (first wavenum value, wavenum length)
-            self.imgShapes.append(dataEvent['imgShape'])
-            self.rc2indList.append(dataEvent['rc_index'])
-            self.ind2rcList.append(dataEvent['index_rc'])
-
-        # init maps
-        if len(self.imgShapes) > 0:
-            self.showComponents((self.wavenumbers, None, None, None))
-
-        if wavenum_align and (wavenum_align.count(wavenum_align[0]) != len(wavenum_align)):
-            MsgBox('Length of wavenumber arrays of displayed maps are not equal. \n'
-                   'Perform PCA or NMF on these maps will lead to error.','warn')
-
-        self.parametertree.setHeader(self.wavenumbers, self.imgShapes, self.rc2indList, self.ind2rcList)
-
-
 
