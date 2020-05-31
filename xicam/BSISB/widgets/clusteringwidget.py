@@ -9,6 +9,8 @@ from qtpy.QtGui import QFont
 from qtpy.QtWidgets import *
 from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler, Normalizer
 from umap import UMAP
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget, toHtml
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
@@ -147,7 +149,7 @@ class ScatterPlotWidget(SpectraPlotWidget):
 
 class ClusterSpectraWidget(SpectraPlotWidget):
     def __init__(self):
-        super(ClusterSpectraWidget, self).__init__()
+        super(ClusterSpectraWidget, self).__init__(txtPosRatio=0.35)
         self._x = None
         self.ymax, self.zmax = 0, 100
         self._plots = []
@@ -194,7 +196,7 @@ class ClusterSpectraWidget(SpectraPlotWidget):
         ymin, ymax = np.min(self._y), np.max(self._y)
         self.getViewBox().setYRange(ymin, ymax, padding=0.1)
         r = self.txtPosRatio
-        self.txt.setPos(r * self._x[-1] + (1 - r) * self._x[0], 0.95 * ymax)
+        self.txt.setPos(r * self._x[-1] + (1 - r) * self._x[0], ymax)
         self.getEnergy()
 
     def plot(self, x, y, *args, **kwargs):
@@ -216,7 +218,7 @@ class ClusterSpectraWidget(SpectraPlotWidget):
             self.ymax = ymax
         self._x, self._y = x, y
         r = self.txtPosRatio
-        self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
+        self.txt.setPos(r * x[-1] + (1 - r) * x[0], self.ymax)
         return plot_item
 
 
@@ -227,7 +229,7 @@ class ClusteringWidget(QSplitter):
         self.mapselectmodel = selectionmodel
         # init some values
         self.selectMapidx = 0
-        self.low_dim = None
+        self.embedding = None
         self.labels = None
         self.mean_spectra = None
 
@@ -259,12 +261,8 @@ class ClusteringWidget(QSplitter):
         self.computeBtn = QPushButton()
         self.computeBtn.setText('Compute clusters')
         self.computeBtn.setFont(font)
-        self.removeBtn = QPushButton()
-        self.removeBtn.setText('Remove spectra')
-        self.removeBtn.setFont(font)
         # add all buttons
         self.buttonlayout.addWidget(self.computeBtn)
-        # self.buttonlayout.addWidget(self.removeBtn)
 
         # Headers listview
         self.headerlistview = QListView()
@@ -290,14 +288,13 @@ class ClusteringWidget(QSplitter):
         self.rightsplitter.addWidget(self.parametertree)
         self.rightsplitter.addWidget(self.buttons)
         self.rightsplitter.addWidget(self.mapListWidget)
-        self.rightsplitter.setSizes([200, 50, 50])
+        self.rightsplitter.setSizes([300, 50, 50])
         self.addWidget(self.leftsplitter)
         self.addWidget(self.rightsplitter)
         self.setSizes([500, 100])
 
         # Connect signals
         self.computeBtn.clicked.connect(self.computeEmbedding)
-        self.removeBtn.clicked.connect(self.removeSpec)
         self.clusterImage.sigShowSpectra.connect(self.rawSpecPlot.showSpectra)
         self.clusterImage.sigShowSpectra.connect(self.showClusterMean)
         self.clusterImage.sigShowSpectra.connect(self.clusterScatterPlot.clickFromImage)
@@ -305,6 +302,7 @@ class ClusteringWidget(QSplitter):
         self.clusterScatterPlot.sigScatterClicked.connect(self.showClusterMean)
         self.clusterScatterPlot.sigScatterClicked.connect(self.setImageCross)
         self.parametertree.sigParamChanged.connect(self.updateClusterParams)
+        self.mapselectmodel.selectionChanged.connect(self.updateMap)
 
     def computeEmbedding(self):
         # get current map idx
@@ -345,15 +343,29 @@ class ClusteringWidget(QSplitter):
                              n_components=n_components,
                              metric=metric,
                              random_state=0)
-            self.low_dim = self.umap.fit_transform(self.dataset)
+            self.embedding = self.umap.fit_transform(self.dataset)
         elif self.parameter['Embedding'] == 'PCA':
-            pass
+            # normalize and mean center
+            if self.parameter['Normalization'] == 'L1':  # normalize
+                data_norm = Normalizer(norm='l1').fit_transform(self.dataset)
+            elif self.parameter['Normalization'] == 'L2':
+                data_norm = Normalizer(norm='l2').fit_transform(self.dataset)
+            else:
+                data_norm = self.dataset
+            # subtract mean
+            data_centered = StandardScaler(with_std=False).fit_transform(data_norm)
+            # Do PCA
+            self.PCA = PCA(n_components=n_components)
+            self.PCA.fit(data_centered)
+            self.embedding = self.PCA.transform(data_centered)
+        # save embedding to standardModelItem
+        self.item.embedding = self.embedding
         # update cluster map
         self.computeCluster()
 
     def computeCluster(self):
         # check if embeddings exist
-        if self.low_dim is None:
+        if self.embedding is None:
             return
         msg.showMessage('Compute clusters.')
         # get num of clusters
@@ -361,7 +373,7 @@ class ClusteringWidget(QSplitter):
         # set colorLUT
         self.colorLUT = cm.get_cmap('viridis', n_clusters).colors[:, :3] * 255
         # compute cluster
-        cluster_object = KMeans(n_clusters=n_clusters, random_state=0).fit(self.low_dim)
+        cluster_object = KMeans(n_clusters=n_clusters, random_state=0).fit(self.embedding)
         self.labels = cluster_object.labels_
         # update cluster image
         self.cluster_map = self.labels.reshape(self.imgShape[0], self.imgShape[1])
@@ -388,10 +400,10 @@ class ClusteringWidget(QSplitter):
         self.updateScatterPlot()
 
     def updateScatterPlot(self):
-        if (self.low_dim is None) or (self.labels is None):
+        if (self.embedding is None) or (self.labels is None):
             return
         # get scatter x, y values
-        self.clusterScatterPlot.scatterData = self.low_dim[:,
+        self.clusterScatterPlot.scatterData = self.embedding[:,
                                               [self.parameter['X Component'] - 1, self.parameter['Y Component'] - 1]]
         # get colormapings
         brushes = [mkBrush(self.colorLUT[x, :]) for x in self.labels]
@@ -411,6 +423,22 @@ class ClusteringWidget(QSplitter):
         elif name in ['X Component', 'Y Component']:
             self.updateScatterPlot()
 
+    def updateMap(self):
+        # get current map idx
+        if not self.mapselectmodel.selectedIndexes():  # no map is open
+            return
+        else:
+            self.selectMapidx = self.mapselectmodel.selectedIndexes()[0].row()
+            # get current item
+            self.item = self.headermodel.item(self.selectMapidx)
+            if hasattr(self.item, 'embedding'):
+                # load embedding
+                self.embedding = self.item.embedding
+                self.computeCluster()
+            else:
+                # reset custer image and plots
+                self.cleanUp()
+
     def showClusterMean(self, i):
         if self.mean_spectra is None:
             return
@@ -427,17 +455,17 @@ class ClusteringWidget(QSplitter):
                                       + toHtml(f'Val: {self.clusterImage._image[self.imgShape[0] - row - 1, col] :d}',
                                                size=8))
 
-    def removeSpec(self):
-        pass
-
     def cleanUp(self):
         if hasattr(self, 'imgShape'):
             img = np.zeros((self.imgShape[0], self.imgShape[1]))
             self.clusterImage.setImage(img=img)
         if hasattr(self, 'scatterPlot'):
             self.clusterScatterPlot.plotItem.clearPlots()
+            self.clusterScatterPlot.scatterData = None
         self.rawSpecPlot.clearAll()
+        self.rawSpecPlot._data = None
         self.clusterMeanPlot.clearAll()
+        self.clusterMeanPlot._data = None
 
     def setHeader(self, field: str):
         self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
@@ -463,7 +491,7 @@ class ClusteringWidget(QSplitter):
                 msg.logMessage('Header object contained no frames with field ''{field}''.', msg.ERROR)
             if data is not None:
                 self.dataSets.append(data)
-        self.isMapOpen()
+        self.cleanUp()
 
     def isMapOpen(self):
         if not self.mapselectmodel.selectedIndexes():  # no map is open
@@ -471,6 +499,7 @@ class ClusteringWidget(QSplitter):
         else:
             self.selectMapidx = self.mapselectmodel.selectedIndexes()[0].row()
             # get current data
+            self.item = self.headermodel.item(self.selectMapidx)
             self.currentHeader = self.headers[self.selectMapidx]
             self.wavenumbers = self.wavenumberList[self.selectMapidx]
             self.rc2ind = self.rc2indList[self.selectMapidx]
@@ -478,6 +507,4 @@ class ClusteringWidget(QSplitter):
             self.imgShape = self.imgShapes[self.selectMapidx]
             self.data = self.dataSets[self.selectMapidx]
             self.rawSpecPlot.setHeader(self.currentHeader, 'spectra')
-            # reset custer image and plots
-            self.cleanUp()
             return True
