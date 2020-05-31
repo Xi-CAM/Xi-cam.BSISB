@@ -12,7 +12,7 @@ from xicam.BSISB.widgets.mapviewwidget import toHtml
 class SpectraPlotWidget(PlotWidget):
     sigEnergyChanged = Signal(object)
 
-    def __init__(self, linePos=650, txtPosRatio=0.3, invertX=True, *args, **kwargs):
+    def __init__(self, linePos=650, txtPosRatio=0.35, invertX=True, *args, **kwargs):
         """
         A widget to display a 1D spectrum
         :param linePos: the initial position of the InfiniteLine
@@ -36,6 +36,7 @@ class SpectraPlotWidget(PlotWidget):
                                   symbolSize=20)
         self.cross.setZValue(100)
         self.addItem(self.cross)
+        self.txt = TextItem()
         self.getViewBox().invertX(invertX)
         self.spectrumInd = 0
         self.selectedPixels = None
@@ -134,11 +135,11 @@ class SpectraPlotWidget(PlotWidget):
             txt_html = toHtml(f'{self._mean_title}')
 
         txt_html += toHtml(f'X = {x_val: .2f}, Y = {y_val: .4f}')
-        self.txt = TextItem(html=txt_html, anchor=(0, 0))
+        self.txt.setHtml(txt_html)
         ymax = np.max(y)
         self._y = y
         r = self.txtPosRatio
-        self.txt.setPos(r * x[-1] + (1 - r) * x[0], 0.95 * ymax)
+        self.txt.setPos(r * x[-1] + (1 - r) * x[0], ymax)
         self.cross.setData([x_val], [y_val])
         self.addItem(self.txt)
 
