@@ -54,7 +54,7 @@ class BSISB(GUIPlugin):
         self.stages = {#"MapToH5": GUILayout(self.mapToH5),
                        "Image View": GUILayout(self.imageview),
                        "Preprocess": GUILayout(self.preprocess),
-                       "Factor Analysis": GUILayout(self.FA_widget),
+                       "Decomposition": GUILayout(self.FA_widget),
                        "Clustering": GUILayout(self.clusterwidget)}
         super(BSISB, self).__init__(*args, **kwargs)
 
@@ -116,4 +116,3 @@ class BSISB(GUIPlugin):
     def updateTab(self):
         # clean up all widgets
         self.preprocess.cleanUp()
-        self.clusterwidget.cleanUp()
