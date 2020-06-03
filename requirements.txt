@@ -11,3 +11,6 @@ seaborn
 scikit-learn
 umap-learn
 pyMCR
+xlrd
+xlwt
+openpyxl
