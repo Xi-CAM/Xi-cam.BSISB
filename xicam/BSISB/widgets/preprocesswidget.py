@@ -200,6 +200,7 @@ class PreprocessWidget(QSplitter):
         self.out = None
         self.reportList = ['preprocess_method', 'wav_anchor', 'interp_method']
         self.arrayList = ['rubberDebased', 'deriv2', 'deriv4']
+        self.mousePosList = []
 
         # split between spectrum parameters and viewwindow, vertical split
         self.params_and_specview = QSplitter()
@@ -275,6 +276,7 @@ class PreprocessWidget(QSplitter):
         self.resultSpectra = baselinePlotWidget()
         # ParameterTree
         self.parametertree = PreprocessParameters()
+        self.parameter = self.parametertree.parameter
         self.processArgs = self.parametertree.processArgs
         self.argMap = self.parametertree.argMap
 
@@ -300,6 +302,7 @@ class PreprocessWidget(QSplitter):
         self.specSelectModel.selectionChanged.connect(self.updateSpecPlot)
         self.normBox.currentIndexChanged.connect(self.updateSpecPlot)
         self.parametertree.sigParamChanged.connect(self.updateSpecPlot)
+        self.rawSpectra.scene().sigMouseClicked.connect(self.setAnchors)
 
     def setHeader(self, field: str):
         self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
@@ -332,6 +335,31 @@ class PreprocessWidget(QSplitter):
         else:
             self.selectMapidx = self.mapselectmodel.selectedIndexes()[0].row()
             return True
+
+    def setAnchors(self, event):
+        # get current map idx and selected spectrum idx
+        specidx = self.getCurrentSpecid()
+        plotChoice = self.normBox.currentIndex()
+        if (not self.isMapOpen()) or (self.specItemModel.rowCount() == 0) or (specidx is None) or (plotChoice != 1):
+            return
+
+        pos = event.pos()
+        button = event.button()
+        parser = Preprocessor(self.wavenumberList[self.selectMapidx], self.dataSets[self.selectMapidx][specidx])
+        parser.parse_anchors(self.parameter['Anchor points'])
+        anchor_low, anchor_high = parser.wav_anchor[0], parser.wav_anchor[-1]
+        if self.rawSpectra.getViewBox().sceneBoundingRect().contains(pos):
+            mousePoint = self.rawSpectra.getViewBox().mapToView(pos)
+            x = mousePoint.x()
+            if anchor_low < x < anchor_high:
+                if button == Qt.LeftButton:# left click, add point to mousePosList
+                    self.mousePosList.append(x)
+                elif (button == Qt.MidButton) and self.mousePosList :# right click, remove last point from mousePosList
+                    self.mousePosList.pop()
+                # set anchors list
+                anchors = [anchor_low] + sorted(self.mousePosList) + [anchor_high]
+                txt = ', '.join([str(int(round(x))) for x in anchors])
+                self.parameter.child('Anchor points').setValue(txt)
 
     def getCurrentSpecid(self):
         # get selected spectrum idx
@@ -375,13 +403,13 @@ class PreprocessWidget(QSplitter):
             if plotChoice == 0:  # plot raw spectrum
                 self.infoBox.setText('')  # clear txt
                 self.rawSpectra.plotBase(self.out, plotType='raw')
-            elif plotChoice == 1:  # plot raw, edges, norm
+            elif plotChoice == 1:  # plot raw, rubberband
                 self.rawSpectra.plotBase(self.out, plotType='base')
                 self.resultSpectra.plotBase(self.out, plotType='rubberband')
-            elif plotChoice == 2:  # plot raw, edges, flattened
+            elif plotChoice == 2:  # plot raw, 2nd derivative
                 self.rawSpectra.plotBase(self.out, plotType='base')
                 self.resultSpectra.plotBase(self.out, plotType='deriv2')
-            elif plotChoice == 3:  # plot raw, edges, Mback + poly normalized
+            elif plotChoice == 3:  # plot raw, 4th derivative
                 self.rawSpectra.plotBase(self.out, plotType='base')
                 self.resultSpectra.plotBase(self.out, plotType='deriv4')
 
