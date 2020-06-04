@@ -457,8 +457,9 @@ class ClusteringWidget(QSplitter):
 
     def cleanUp(self):
         if hasattr(self, 'imgShape'):
-            img = np.zeros((self.imgShape[0], self.imgShape[1]))
-            self.clusterImage.setImage(img=img)
+            self.clusterImage.clear()
+            # img = np.zeros((self.imgShape[0], self.imgShape[1]))
+            # self.clusterImage.setImage(img=img)
         if hasattr(self, 'scatterPlot'):
             self.clusterScatterPlot.plotItem.clearPlots()
             self.clusterScatterPlot.scatterData = None
