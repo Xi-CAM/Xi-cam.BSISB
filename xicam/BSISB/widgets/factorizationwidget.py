@@ -362,11 +362,10 @@ class FactorizationWidget(QSplitter):
         # get map ROI selected region
         self.selectedPixelsList = [self.headermodel.item(i).selectedPixels for i in range(self.headermodel.rowCount())]
         # clear plots and legends
-        # self.componentSpectra.plotItem.clearPlots()
-        self.componentSpectra.clearAll()
+        self.componentSpectra.getViewBox().clear()
         self.componentSpectra.ymax = 0
-        # for sample, label in self._plotLegends.items[:]:
-        #     self._plotLegends.removeItem(label.text)
+        for sample, label in self._plotLegends.items[:]:
+            self._plotLegends.removeItem(label.text)
 
         self.wavenumbers, self._fac, self._data_fac, self._dataRowSplit = fac_obj[0], fac_obj[1], fac_obj[2], fac_obj[3]
 
