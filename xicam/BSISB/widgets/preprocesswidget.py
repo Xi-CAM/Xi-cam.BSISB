@@ -475,6 +475,8 @@ class PreprocessWidget(QSplitter):
         self.rawSpectra.clearAll()
         self.resultSpectra.clearAll()
         self.infoBox.setText('')
+        self.mousePosList = []
+        self.normBox.setCurrentIndex(0)
 
     def batchProcess(self):
         # get current map idx
