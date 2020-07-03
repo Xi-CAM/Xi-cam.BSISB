@@ -51,7 +51,7 @@ class BSISB(GUIPlugin):
         self.imageview = BSISBTabview(self.headermodel, self.selectionmodel, MapView, 'image')
         self.imageview.currentChanged.connect(self.updateTab)
 
-        self.stages = {#"MapToH5": GUILayout(self.mapToH5),
+        self.stages = {"MapToH5": GUILayout(self.mapToH5),
                        "Image View": GUILayout(self.imageview),
                        "Preprocess": GUILayout(self.preprocess),
                        "Decomposition": GUILayout(self.FA_widget),
