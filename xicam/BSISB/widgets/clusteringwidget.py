@@ -495,7 +495,7 @@ class ClusteringWidget(QSplitter):
         self.cleanUp()
 
     def isMapOpen(self):
-        if not self.mapselectmodel.selectedIndexes():  # no map is open
+        if (not self.mapselectmodel.selectedIndexes()):  # no map is open
             return False
         else:
             self.selectMapidx = self.mapselectmodel.selectedIndexes()[0].row()
