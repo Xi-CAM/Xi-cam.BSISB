@@ -60,7 +60,8 @@ Then run the following commands to install Xi-cam:
 
     $ pip install xicam
 
-Run the following commands to install lbl_ir and Xi-cam.BSISB:
+### Install lbl_ir and Xi-cam.BSISB plugin:
+Run the following commands to install lbl_ir package and Xi-cam.BSISB plugin:
 
     $ git clone https://github.com/lchen23/Xi-cam.BSISB.git
     $ cd Xi-cam.BSISB/lbl_ir
