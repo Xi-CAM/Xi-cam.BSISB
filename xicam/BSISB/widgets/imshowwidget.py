@@ -8,9 +8,9 @@ class SlimImageView(BetterButtons):
         # Shrink LUT
         self.getHistogramWidget().setMinimumWidth(1)
         # set up layout
-        self.ui.gridLayout.addWidget(self.resetAxesBtn, 2, 2, 1, 1)
-        self.ui.gridLayout.addWidget(self.resetLUTBtn, 3, 2, 1, 1)
-        self.ui.gridLayout.addWidget(self.ui.graphicsView, 0, 0, 4, 1)
+        # self.ui.gridLayout.addWidget(self.resetAxesBtn, 2, 2, 1, 1)
+        # self.ui.gridLayout.addWidget(self.resetLUTBtn, 3, 2, 1, 1)
+        # self.ui.gridLayout.addWidget(self.ui.graphicsView, 0, 0, 4, 1)
         # set up colorbar
         self.setPredefinedGradient("viridis")
         self.view.invertY(invertY)
