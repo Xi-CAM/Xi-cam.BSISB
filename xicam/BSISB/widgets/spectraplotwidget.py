@@ -221,29 +221,35 @@ class baselinePlotWidget(SpectraPlotWidget):
         self._y = None  # disable getEnergy func
         if plotType == 'raw':
             self.plotItem.plot(x, y, name='Raw', pen=mkPen('w', width=2))
-        elif plotType == 'base':
+        elif plotType == 'rubber_base':
             self.plotItem.plot(x, y, name='Raw', pen=mkPen('w', width=2))
             self.plotItem.plot(x, dataGroup.rubberBaseline, name='Rubberband baseline', pen=mkPen('g', style=Qt.DotLine, width=2))
             self.plotItem.plot(dataGroup.wav_anchor, dataGroup.spec_anchor, symbol='o', symbolPen='r', symbolBrush=0.5)
+        elif plotType == 'kohler_base':
+            self.plotItem.plot(x, y, name='Raw', pen=mkPen('w', width=2))
+            self.plotItem.plot(x, dataGroup.kohlerBaseline, name='Kohler EMSC baseline', pen=mkPen('g', style=Qt.DotLine, width=2))
         elif plotType == 'rubberband':
             y = self._mu = dataGroup.rubberDebased
             self.plotItem.plot(x, y, name='Rubberband debased', pen=mkPen('r', width=2))
-        elif plotType == 'deriv2':
+        elif plotType == 'kohler':
+            y = self._mu = dataGroup.kohlerDebased
+            self.plotItem.plot(x, y, name='Kohler EMSC debased', pen=mkPen('r', width=2))
+        elif plotType == 'deriv2_rubberband':
             y = self._mu = dataGroup.rubberDebased # for data cursor
-            scale, offset = self.alignTwoCurve(dataGroup.rubberDebased[n//4:n*3//4], dataGroup.deriv2[n//4:n*3//4])
-            deriv2Scaled = dataGroup.deriv2 * scale + offset
+            scale, offset = self.alignTwoCurve(dataGroup.rubberDebased[n//4:n*3//4], dataGroup.deriv2_rubber[n//4:n*3//4])
+            deriv2Scaled = dataGroup.deriv2_rubber * scale + offset
             ymin, ymax = np.min(y), np.max(y)
             self.getViewBox().setYRange(ymin, ymax, padding=0.1)
             self.plotItem.plot(x, y, name='Rubberband debased', pen=mkPen('r', width=2))
-            self.plotItem.plot(x, deriv2Scaled, name='2nd derivative (scaled)', pen=mkPen('g', width=2))
-        elif plotType == 'deriv4':
-            y = self._mu = dataGroup.rubberDebased
-            scale, offset = self.alignTwoCurve(dataGroup.rubberDebased[n//4:n*3//4], dataGroup.deriv4[n//4:n*3//4])
-            deriv4Scaled = dataGroup.deriv4 * scale + offset
+            self.plotItem.plot(x, deriv2Scaled, name='2nd derivative (scaled, Rubberband)', pen=mkPen('g', width=2))
+        elif plotType == 'deriv2_kohler':
+            y = self._mu = dataGroup.kohlerDebased
+            scale, offset = self.alignTwoCurve(dataGroup.kohlerDebased[n//4:n*3//4], dataGroup.deriv2_kohler[n//4:n*3//4])
+            deriv2Scaled = dataGroup.deriv2_kohler * scale + offset
             ymin, ymax = np.min(y), np.max(y)
             self.getViewBox().setYRange(ymin, ymax, padding=0.1)
             self.plotItem.plot(x, y, name='Rubberband debased', pen=mkPen('r', width=2))
-            self.plotItem.plot(x, deriv4Scaled, name='4th derivative (normed, scaled)', pen=mkPen('g', width=2))
+            self.plotItem.plot(x, deriv2Scaled, name='2nd derivative (scaled, Kohler)', pen=mkPen('g', width=2))
         # add infinityline, cross
         self.addDataCursor(x, y)
 

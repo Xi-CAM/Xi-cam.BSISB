@@ -9,6 +9,7 @@ from qtpy.QtGui import QStandardItemModel, QStandardItem, QFont
 from pyqtgraph.parametertree import ParameterTree, Parameter
 from xicam.core import msg
 from lbl_ir.data_objects.ir_map import ir_map, val2ind
+from lbl_ir.tasks.preprocessing.EMSC import Kohler_zero
 from xicam.BSISB.widgets.spectraplotwidget import baselinePlotWidget
 from xicam.BSISB.widgets.uiwidget import MsgBox, YesNoDialog
 
@@ -41,7 +42,7 @@ class Preprocessor:
         self.spec_anchor = self.spectrum[anchor_idx]
         return None
 
-    def isBaseFitOK(self, anchors, kind):
+    def isBaseFitOK(self, anchors, kind, w_regions):
         """
         Check is there is enough anchor points to fit higher order baseline
         :param anchors: anchor points
@@ -50,23 +51,35 @@ class Preprocessor:
         """
         # parse anchor points
         self.parse_anchors(anchors)
-        # decide if num of anchor points is enough for 'quadratic' or 'cubic' fit
-        if len(self.wav_anchor) < 2:
-            MsgBox('Baseline fitting needs at least 2 anchor points.\n' +
-                   'Please add more "anchor points" to correctly fit the baseline.', type='error')
-            return False
-        elif len(self.wav_anchor) < 3 and kind == 'quadratic':
-            MsgBox('Quadratic baseline needs more than 2 anchor points.\n' +
-                   'Please add more "anchor points" to correctly fit the baseline.', type='error')
-            return False
-        elif len(self.wav_anchor) < 4 and kind == 'cubic':
-            MsgBox('Cubic baseline needs more than 3 anchor points.\n' +
-                   'Please add more "anchor points" to correctly fit the baseline.', type='error')
-            return False
-        else:
-            return True
+        if self.preprocess_method == 'rubberband':
+            # decide if num of anchor points is enough for 'quadratic' or 'cubic' fit
+            if len(self.wav_anchor) < 2:
+                MsgBox('Baseline fitting needs at least 2 anchor points.\n' +
+                       'Please add more "anchor points" to correctly fit the baseline.', type='error')
+                return False
+            elif len(self.wav_anchor) < 3 and kind == 'quadratic':
+                MsgBox('Quadratic baseline needs more than 2 anchor points.\n' +
+                       'Please add more "anchor points" to correctly fit the baseline.', type='error')
+                return False
+            elif len(self.wav_anchor) < 4 and kind == 'cubic':
+                MsgBox('Cubic baseline needs more than 3 anchor points.\n' +
+                       'Please add more "anchor points" to correctly fit the baseline.', type='error')
+                return False
+            else:
+                return True
+        elif self.preprocess_method == 'kohler':
+            try:  # read w_regions
+                self.w_regions = eval(w_regions)
+            except :
+                MsgBox('Fitting regions format is not correct.\n' +
+                       'Please consult default values.', type='error')
+            if self.w_regions is not None:
+                return True
+            else:
+                return False
 
-    def rubber_band(self, anchors, kind='linear'):
+
+    def rubber_band(self, anchors, kind='linear', w_regions=None):
         """
         Calculate rubberBaseline, debased spectrum and 2nd, 4th order derivative of the spectrum
         :param anchors: rubberband anchor points
@@ -76,14 +89,25 @@ class Preprocessor:
         self.preprocess_method = 'rubberband'
         self.interp_method = kind
         # get rubberBaseline and debased spectrum
-        if not self.isBaseFitOK(anchors, kind):
+        if not self.isBaseFitOK(anchors, kind, w_regions):
             return False
 
         f = interp1d(self.wav_anchor, self.spec_anchor, kind=kind)
         self.rubberBaseline = f(self.energy)
         self.rubberDebased = self.specTrim - self.rubberBaseline
 
-        # get 2nd and 4th order derivatives
+        # get 2nd order derivatives
+        self.get_derivative()
+        return True
+
+    def kohler(self, anchors=None, kind=None, w_regions=None):
+        self.preprocess_method = 'kohler'
+        # get kohler baseline and debased spectrum
+        if not self.isBaseFitOK(anchors, kind, w_regions):
+            return False
+
+        self.kohlerDebased, self.kohlerBaseline = Kohler_zero(self.energy, self.specTrim, self.w_regions)
+        # get 2nd order derivatives
         self.get_derivative()
         return True
 
@@ -94,8 +118,10 @@ class Preprocessor:
         :return: None
         """
         dx = self.energy[1] - self.energy[0]
-        self.deriv2 = self.nthOrderGradient(dx, self.specTrim, n=2)
-        self.deriv4 = self.nthOrderGradient(dx, self.specTrim, n=4)
+        if self.preprocess_method == 'rubberband':
+            self.deriv2_rubber = self.nthOrderGradient(dx, self.specTrim, n=2)
+        elif self.preprocess_method == 'kohler':
+            self.deriv2_kohler = self.nthOrderGradient(dx, self.kohlerDebased, n=2)
         return None
 
     def nthOrderGradient(self, dx, y, n=1):
@@ -121,11 +147,14 @@ class PreprocessParameters(ParameterTree):
 
         self.parameter = Parameter(name='params', type='group',
                                    children=[{'name': "Preprocess method",
-                                              'values': ['Rubberband'],
-                                              'value': 'Rubberband',
+                                              'values': ['Kohler_EMSC','Rubberband'],
+                                              'value': 'Kohler_EMSC',
                                               'type': 'list'},
                                              {'name': "Anchor points",
                                               'value': '400, 4000',
+                                              'type': 'str'},
+                                             {'name': "Fitting regions",
+                                              'value': '[(650, 750),(1780, 2680),(3680, 4000)]',
                                               'type': 'str'},
                                              {'name': "Interp method",
                                               'value': 'linear',
@@ -134,6 +163,9 @@ class PreprocessParameters(ParameterTree):
                                              ])
         self.setParameters(self.parameter, showTop=False)
         self.setIndentation(0)
+        self.parameter.child('Interp method').hide()
+        self.parameter.child('Anchor points').hide()
+
         # change Fonts
         self.fontSize = 12
         font = QFont("Helvetica [Cronyx]", self.fontSize)
@@ -147,7 +179,8 @@ class PreprocessParameters(ParameterTree):
                 item.widget.setMaximumHeight(40)
         # init params dict
         self.argMap = {"Anchor points": 'anchors',
-                       "Interp method": 'kind'
+                       "Interp method": 'kind',
+                       "Fitting regions": 'w_regions'
                        }
         # set self.processArgs to default value
         self.processArgs = {}
@@ -156,14 +189,13 @@ class PreprocessParameters(ParameterTree):
                 self.processArgs['anchors'] = '400, 4000'
             elif child.name() == "Interp method":
                 self.processArgs['kind'] = 'linear'
-            # elif child.name() not in ["Normalization method"]:
-            #     self.processArgs[self.argMap[child.name()]] = None
+            elif child.name() == "Fitting regions":
+                self.processArgs['w_regions'] = '[(650, 750), (1780, 2680), (3680, 4000)]'
 
         # connect signals
+        self.parameter.child('Preprocess method').sigValueChanged.connect(self.updateMethod)
         for name in self.argMap.keys():
             self.parameter.child(name).sigValueChanged.connect(partial(self.updateParam, name))
-
-        # self.parameter.child('Preprocess method').sigValueChanged.connect(self.updateMethod)
 
     def updateParam(self, name):
         """
@@ -174,19 +206,19 @@ class PreprocessParameters(ParameterTree):
         self.processArgs[self.argMap[name]] = self.parameter[name]
         self.sigParamChanged.emit(self.processArgs)
 
-    # def updateMethod(self):
-    #     """
-    #     Toggle parameter menu based on fit method
-    #     :return:
-    #     """
-    #     if self.parameter["Normalization method"] == 'mback':
-    #         self.parameter.child('Z number').show()
-    #         self.parameter.child('Edge').show()
-    #         self.parameter.child('Edge step').hide()
-    #     else:
-    #         self.parameter.child('Z number').hide()
-    #         self.parameter.child('Edge').hide()
-    #         self.parameter.child('Edge step').show()
+    def updateMethod(self):
+        """
+        Toggle parameter menu based on fit method
+        :return:
+        """
+        if self.parameter["Preprocess method"] == 'Kohler_EMSC':
+            self.parameter.child('Fitting regions').show()
+            self.parameter.child('Interp method').hide()
+            self.parameter.child('Anchor points').hide()
+        else:
+            self.parameter.child('Fitting regions').hide()
+            self.parameter.child('Interp method').show()
+            self.parameter.child('Anchor points').show()
 
 
 class PreprocessWidget(QSplitter):
@@ -198,8 +230,9 @@ class PreprocessWidget(QSplitter):
         self.resultDict = {}
         self.isBatchProcessOn = False
         self.out = None
-        self.reportList = ['preprocess_method', 'wav_anchor', 'interp_method']
-        self.arrayList = ['rubberDebased', 'deriv2', 'deriv4']
+        self.dfDict = None
+        self.reportList = ['preprocess_method', 'wav_anchor', 'interp_method', 'w_regions']
+        self.arrayList = ['kohlerDebased', 'kohlerBaseline', 'rubberDebased', 'deriv2_kohler', 'deriv2_rubber']
         self.mousePosList = []
 
         # split between spectrum parameters and viewwindow, vertical split
@@ -227,18 +260,21 @@ class PreprocessWidget(QSplitter):
         self.removeBtn.setFont(font)
         self.normBox = QComboBox()
         self.normBox.addItems(['Raw spectrum',
+                               'Kohler EMSC baseline',
                                'Rubberband baseline',
+                               'Kohler EMSC + 2nd derivative',
                                'Rubberband + 2nd derivative',
-                               'Rubberband + 4th derivative',
                                ])
         self.normBox.setFont(font)
         self.batchBtn = QPushButton()
         self.batchBtn.setText('Batch process')
         self.batchBtn.setFont(font)
         self.saveResultBox = QComboBox()
-        self.saveResultBox.addItems(['Save rubberband',
-                                     'Save 2nd derivative',
-                                     'Save 4th derivative',
+        self.saveResultBox.addItems(['Save kohler',
+                                     'Save kohler baseline',
+                                     'Save rubberband',
+                                     'Save kohler 2nd derivative',
+                                     'Save rubberband 2nd derivative',
                                      'Save all',
                                      ])
         self.saveResultBox.setFont(font)
@@ -299,10 +335,12 @@ class PreprocessWidget(QSplitter):
         self.loadBtn.clicked.connect(self.loadData)
         self.removeBtn.clicked.connect(self.removeSpec)
         self.batchBtn.clicked.connect(self.batchProcess)
+        self.saveResultBox.currentIndexChanged.connect(self.saveResults)
         self.specSelectModel.selectionChanged.connect(self.updateSpecPlot)
         self.normBox.currentIndexChanged.connect(self.updateSpecPlot)
         self.parametertree.sigParamChanged.connect(self.updateSpecPlot)
         self.rawSpectra.scene().sigMouseClicked.connect(self.setAnchors)
+        self.parameter.child('Preprocess method').sigValueChanged.connect(self.updateMethod)
 
     def setHeader(self, field: str):
         self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
@@ -340,7 +378,7 @@ class PreprocessWidget(QSplitter):
         # get current map idx and selected spectrum idx
         specidx = self.getCurrentSpecid()
         plotChoice = self.normBox.currentIndex()
-        if (not self.isMapOpen()) or (self.specItemModel.rowCount() == 0) or (specidx is None) or (plotChoice != 1):
+        if (not self.isMapOpen()) or (self.specItemModel.rowCount() == 0) or (specidx is None) or (plotChoice not in [2, 4]):
             return
 
         pos = event.pos()
@@ -370,6 +408,12 @@ class PreprocessWidget(QSplitter):
             specidx = currentSpecItem.idx
         return specidx
 
+    def updateMethod(self):
+        if self.parameter["Preprocess method"] == 'Kohler_EMSC':
+            self.normBox.setCurrentIndex(1)
+        else:
+            self.normBox.setCurrentIndex(2)
+
     def updateSpecPlot(self):
         # get current map idx and selected spectrum idx
         specidx = self.getCurrentSpecid()
@@ -386,14 +430,14 @@ class PreprocessWidget(QSplitter):
 
         # create Preprocessor object
         self.out = Preprocessor(self.wavenumberList[self.selectMapidx], self.dataSets[self.selectMapidx][specidx])
-        # calculate rubberband baseline
-        baselineOK = self.out.rubber_band(**self.processArgs)
+        baselineOK = self.out.rubber_band(**self.processArgs) and self.out.kohler(**self.processArgs)
+
         if not baselineOK:
             return
 
         # make results report
         if plotChoice != 0:
-            self.getReport(self.out)
+            self.getReport(self.out, plotChoice)
 
         # if not batch processing, show plots
         if not self.isBatchProcessOn:
@@ -403,27 +447,43 @@ class PreprocessWidget(QSplitter):
             if plotChoice == 0:  # plot raw spectrum
                 self.infoBox.setText('')  # clear txt
                 self.rawSpectra.plotBase(self.out, plotType='raw')
-            elif plotChoice == 1:  # plot raw, rubberband
-                self.rawSpectra.plotBase(self.out, plotType='base')
+            elif plotChoice == 1:  # plot raw, kohler
+                self.rawSpectra.plotBase(self.out, plotType='kohler_base')
+                self.resultSpectra.plotBase(self.out, plotType='kohler')
+            elif plotChoice == 2:  # plot raw, rubberband
+                self.rawSpectra.plotBase(self.out, plotType='rubber_base')
                 self.resultSpectra.plotBase(self.out, plotType='rubberband')
-            elif plotChoice == 2:  # plot raw, 2nd derivative
-                self.rawSpectra.plotBase(self.out, plotType='base')
-                self.resultSpectra.plotBase(self.out, plotType='deriv2')
-            elif plotChoice == 3:  # plot raw, 4th derivative
-                self.rawSpectra.plotBase(self.out, plotType='base')
-                self.resultSpectra.plotBase(self.out, plotType='deriv4')
+            elif plotChoice == 3:  # plot raw, kohler 2nd derivative
+                self.rawSpectra.plotBase(self.out, plotType='kohler_base')
+                self.resultSpectra.plotBase(self.out, plotType='deriv2_kohler')
+            elif plotChoice == 4:  # plot raw, rubberband 2nd derivative
+                self.rawSpectra.plotBase(self.out, plotType='rubber_base')
+                self.resultSpectra.plotBase(self.out, plotType='deriv2_rubberband')
 
-    def getReport(self, output):
+            if plotChoice in [1, 3]:
+                self.parameter.child('Preprocess method').setValue('Kohler_EMSC', blockSignal=self.updateMethod)
+            elif plotChoice in [2, 4]:
+                self.parameter.child('Preprocess method').setValue('Rubberband', blockSignal=self.updateMethod)
+
+    def getReport(self, output, plotChoice):
         resultTxt = ''
-        # get normalization results
+        # get baseline results
+        reportList = self.reportList.copy()
+        if plotChoice in [2, 4]:
+            reportList = self.reportList[:-1]
+            output.preprocess_method = 'rubberband'
+        elif plotChoice in [1, 3]:
+            reportList = [self.reportList[0], self.reportList[-1]]
+            output.preprocess_method = 'kohler'
+
         for item in dir(output):
-            if item in self.reportList:
+            if item in reportList:
                 if item == 'wav_anchor':
                     val = getattr(output, item)
                     printFormat = ('{:.2f}, ' * len(val))[:-1]
                     resultTxt += item + ': ' + printFormat.format(*val) + '\n'
                 else:
-                    resultTxt += item + ': ' + getattr(output, item) + '\n'
+                    resultTxt += item + ': ' + str(getattr(output, item)) + '\n'
             if (item in self.arrayList) or (item in self.reportList):
                 self.resultDict[item] = getattr(output, item)
 
@@ -488,9 +548,18 @@ class PreprocessWidget(QSplitter):
         # check if baseline fit OK
         if self.out is None:
             self.out = Preprocessor(self.wavenumberList[self.selectMapidx], self.dataSets[self.selectMapidx][0])
-        baselineOK = self.out.rubber_band(**self.processArgs)
+
+        # get plotchoice
+        plotChoice = self.normBox.currentIndex()
+        if plotChoice != 0:
+            # calculate rubberband and kohler baseline
+            baselineOK = self.out.rubber_band(**self.processArgs) and self.out.kohler(**self.processArgs)
+        else:
+            MsgBox('Plot type is "Raw spectrum".\nPlease change plot type to "Kohler" or "Rubberband".')
+            return
         if not baselineOK:
             return
+
         # notice to user
         userMsg = YesNoDialog(f'Ready to batch process selected spectra.\nDo you want to continue?')
         userChoice = userMsg.choice()
@@ -498,8 +567,6 @@ class PreprocessWidget(QSplitter):
             return
 
         self.isBatchProcessOn = True
-        # set plot type to rubberband
-        self.normBox.setCurrentIndex(1)
 
         # init resultSetsDict, paramsDict
         self.resultSetsDict = {}
@@ -507,7 +574,6 @@ class PreprocessWidget(QSplitter):
         self.paramsDict['specID'] = []
         self.paramsDict['row_column'] = []
         ind2rc = self.ind2rcList[self.selectMapidx]
-        filePath = self.pathList[self.selectMapidx]
         energy = self.out.energy
         n_energy = len(energy)
         for item in self.arrayList:
@@ -532,19 +598,28 @@ class PreprocessWidget(QSplitter):
                 self.paramsDict[item].append(self.resultDict[item])
 
         # result collection completed. convert paramsDict to df
-        dfDict = {}
-        dfDict['param'] = pd.DataFrame(self.paramsDict).set_index('specID')
+        self.dfDict = {}
+        self.dfDict['param'] = pd.DataFrame(self.paramsDict).set_index('specID')
         for item in self.arrayList:
             # convert resultSetsDict to df
-            dfDict[item] = pd.DataFrame(self.resultSetsDict[item], columns=energy.tolist(),
+            self.dfDict[item] = pd.DataFrame(self.resultSetsDict[item], columns=energy.tolist(),
                                         index=self.paramsDict['specID']).rename_axis('specID', axis=0)
 
-        #  save df to files
+        # batch process completed
+        self.isBatchProcessOn = False
         msg.showMessage(f'Batch processing is completed! Saving results to csv files.')
+        #  save df to files
+        self.saveResults()
+
+    def saveResults(self):
+        if self.dfDict is None:
+            return
+        filePath = self.pathList[self.selectMapidx]
+        energy = self.out.energy
         saveDataChoice = self.saveResultBox.currentIndex()
-        if saveDataChoice != 3:  # save a single result
+        if saveDataChoice != 5:  # save a single result
             saveDataType = self.arrayList[saveDataChoice]
-            dirName, csvName, h5Name = self.saveToFiles(energy, dfDict, filePath, saveDataType)
+            dirName, csvName, h5Name = self.saveToFiles(energy, self.dfDict, filePath, saveDataType)
             if h5Name is None:
                 MsgBox(f'Processed data was saved as csv file at: \n{dirName + csvName}')
             else:
@@ -554,7 +629,7 @@ class PreprocessWidget(QSplitter):
             csvList = []
             h5List = []
             for saveDataType in self.arrayList:
-                dirName, csvName, h5Name = self.saveToFiles(energy, dfDict, filePath, saveDataType)
+                dirName, csvName, h5Name = self.saveToFiles(energy, self.dfDict, filePath, saveDataType)
                 csvList.append(csvName)
                 h5List.append(h5Name)
 
@@ -568,9 +643,7 @@ class PreprocessWidget(QSplitter):
 
         # save parameter
         xlsName = csvName[:-4] + '_param.xlsx'
-        dfDict['param'].to_excel(dirName + xlsName)
-        # batch process completed
-        self.isBatchProcessOn = False
+        self.dfDict['param'].to_excel(dirName + xlsName)
 
     def saveToFiles(self, energy, dfDict, filePath, saveDataType):
 
