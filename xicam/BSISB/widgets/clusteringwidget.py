@@ -261,8 +261,12 @@ class ClusteringWidget(QSplitter):
         self.computeBtn = QPushButton()
         self.computeBtn.setText('Compute clusters')
         self.computeBtn.setFont(font)
+        self.saveBtn = QPushButton()
+        self.saveBtn.setText('Save clusters')
+        self.saveBtn.setFont(font)
         # add all buttons
         self.buttonlayout.addWidget(self.computeBtn)
+        self.buttonlayout.addWidget(self.saveBtn)
 
         # Headers listview
         self.headerlistview = QListView()
@@ -295,6 +299,7 @@ class ClusteringWidget(QSplitter):
 
         # Connect signals
         self.computeBtn.clicked.connect(self.computeEmbedding)
+        self.saveBtn.clicked.connect(self.saveCluster)
         self.clusterImage.sigShowSpectra.connect(self.rawSpecPlot.showSpectra)
         self.clusterImage.sigShowSpectra.connect(self.showClusterMean)
         self.clusterImage.sigShowSpectra.connect(self.clusterScatterPlot.clickFromImage)
@@ -399,6 +404,14 @@ class ClusteringWidget(QSplitter):
         # update scatter plot
         self.updateScatterPlot()
 
+    def saveCluster(self):
+        if hasattr(self, 'cluster_map') and hasattr(self, 'mean_spectra'):
+            np.save('cluster_map.npy', self.cluster_map)
+            cluster_mean = np.append(self.wavenumbers_select.reshape(1, -1), self.mean_spectra, axis=0)
+            np.save('cluster_mean.npy', cluster_mean)
+            MsgBox('Clusters successfully saved!')
+
+
     def updateScatterPlot(self):
         if (self.embedding is None) or (self.labels is None):
             return
@@ -495,7 +508,7 @@ class ClusteringWidget(QSplitter):
         self.cleanUp()
 
     def isMapOpen(self):
-        if (not self.mapselectmodel.selectedIndexes()):  # no map is open
+        if not self.mapselectmodel.selectedIndexes():  # no map is open
             return False
         else:
             self.selectMapidx = self.mapselectmodel.selectedIndexes()[0].row()
