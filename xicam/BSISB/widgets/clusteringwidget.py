@@ -1,5 +1,7 @@
 from functools import partial
+import os
 import numpy as np
+import pandas as pd
 from lbl_ir.data_objects.ir_map import val2ind
 from matplotlib import cm
 from pyqtgraph import TextItem, mkBrush, mkPen
@@ -11,7 +13,7 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, Normalizer
-from umap import UMAP
+from umap.umap_ import UMAP
 from xicam.BSISB.widgets.mapviewwidget import MapViewWidget, toHtml
 from xicam.BSISB.widgets.spectraplotwidget import SpectraPlotWidget
 from xicam.BSISB.widgets.uiwidget import MsgBox
@@ -392,8 +394,16 @@ class ClusteringWidget(QSplitter):
         self.clusterImage.cross.show()
         # update cluster mean
         mean_spectra = []
+        self.dfGroups = []
+        n_spectra = len(self.data)
+        self.dataList = np.zeros((n_spectra, len(self.wavenumbers)))
+        for i in range(n_spectra):
+            self.dataList[i] = self.data[i]
+
         for ii in range(n_clusters):
             sel = (self.labels == ii)
+            self.dfGroups.append(pd.DataFrame(self.dataList[sel], columns=self.wavenumbers.tolist(),
+                                        index=np.arange(n_spectra)[sel]))
             this_mean = np.mean(self.dataset[sel, :], axis=0)
             mean_spectra.append(this_mean)
         self.mean_spectra = np.vstack(mean_spectra)
@@ -406,10 +416,17 @@ class ClusteringWidget(QSplitter):
 
     def saveCluster(self):
         if hasattr(self, 'cluster_map') and hasattr(self, 'mean_spectra'):
-            np.save('cluster_map.npy', self.cluster_map)
-            cluster_mean = np.append(self.wavenumbers_select.reshape(1, -1), self.mean_spectra, axis=0)
-            np.save('cluster_mean.npy', cluster_mean)
-            MsgBox('Clusters successfully saved!')
+            filePath = self.pathList[self.selectMapidx]
+            # get dirname and old filename
+            dirName = os.path.dirname(filePath)
+            oldFileName = os.path.basename(filePath)
+            n_clusters = self.parameter['Clusters']
+            for i in range(n_clusters):
+                # save dataFrames to csv file
+                csvName = oldFileName[:-3] + f'_cluster{i}.csv'
+                newFilePath = os.path.join(dirName, csvName)
+                self.dfGroups[i].to_csv(newFilePath)
+            MsgBox(f'Cluster spectra groups were successfully saved at: {newFilePath}!')
 
 
     def updateScatterPlot(self):
@@ -488,6 +505,7 @@ class ClusteringWidget(QSplitter):
         self.imgShapes = []
         self.rc2indList = []
         self.ind2rcList = []
+        self.pathList = []
         self.dataSets = []
 
         # get wavenumbers, imgShapes, rc2ind
@@ -497,6 +515,7 @@ class ClusteringWidget(QSplitter):
             self.imgShapes.append(dataEvent['imgShape'])
             self.rc2indList.append(dataEvent['rc_index'])
             self.ind2rcList.append(dataEvent['index_rc'])
+            self.pathList.append(dataEvent['path'])
             # get raw spectra
             data = None
             try:  # spectra datasets

@@ -603,7 +603,7 @@ class PreprocessWidget(QSplitter):
         for item in self.arrayList:
             # convert resultSetsDict to df
             self.dfDict[item] = pd.DataFrame(self.resultSetsDict[item], columns=energy.tolist(),
-                                        index=self.paramsDict['specID']).rename_axis('specID', axis=0)
+                                        index=self.paramsDict['specID'])
 
         # batch process completed
         self.isBatchProcessOn = False
