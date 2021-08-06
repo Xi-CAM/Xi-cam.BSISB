@@ -402,6 +402,7 @@ class ClusteringWidget(QSplitter):
 
         for ii in range(n_clusters):
             sel = (self.labels == ii)
+            # save each group spectra to a dataFrame
             self.dfGroups.append(pd.DataFrame(self.dataList[sel], columns=self.wavenumbers.tolist(),
                                         index=np.arange(n_spectra)[sel]))
             this_mean = np.mean(self.dataset[sel, :], axis=0)
