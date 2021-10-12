@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from lbl_ir.data_objects.ir_map import val2ind
 from matplotlib import cm
-from pyqtgraph import TextItem, mkBrush, mkPen
+from pyqtgraph import TextItem, mkBrush, mkPen, ImageItem, PolyLineROI
 from pyqtgraph.parametertree import ParameterTree, Parameter
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QFont
@@ -112,6 +112,7 @@ class ClusteringParameters(ParameterTree):
 
 class ScatterPlotWidget(SpectraPlotWidget):
     sigScatterClicked = Signal(object)
+    sigScatterRawInd = Signal(object)
 
     def __init__(self):
         super(ScatterPlotWidget, self).__init__(invertX=False, linePos=0)
@@ -119,6 +120,11 @@ class ScatterPlotWidget(SpectraPlotWidget):
         self.scene().sigMouseMoved.connect(self.moveCrossPos)
         self.line.hide()
         self.scatterData = None
+        self.selectedPixels = None
+        self.selPx_rc2ind = None
+        self.selPx_ind2rc = None
+        self.rc2ind = None
+        self.ind2rc = None
         self.nbr = None
 
     def setCrossPos(self, event):
@@ -129,7 +135,14 @@ class ScatterPlotWidget(SpectraPlotWidget):
             _, ind = self.nbr.kneighbors(np.array([[x, y]]))
             self.addItem(self.cross)
             self.cross.setData(self.scatterData[ind[0], 0], self.scatterData[ind[0], 1])
-            self.sigScatterClicked.emit(ind[0, 0])
+            if self.selectedPixels is None:
+                self.sigScatterClicked.emit(ind[0, 0])
+                self.sigScatterRawInd.emit(ind[0, 0])
+            else:
+                row, col = self.selPx_ind2rc[ind[0, 0]]
+                raw_ind = self.rc2ind[(row, col)]
+                self.sigScatterClicked.emit(ind[0, 0])
+                self.sigScatterRawInd.emit(raw_ind)
 
     def moveCrossPos(self, pos):
         if (self.getViewBox().sceneBoundingRect().contains(pos)) and (self.scatterData is not None):
@@ -138,10 +151,24 @@ class ScatterPlotWidget(SpectraPlotWidget):
             _, ind = self.nbr.kneighbors(np.array([[x, y]]))
             self.addItem(self.cross)
             self.cross.setData(self.scatterData[ind[0], 0], self.scatterData[ind[0], 1])
-            self.sigScatterClicked.emit(ind[0, 0])
+            if self.selectedPixels is None:
+                self.sigScatterClicked.emit(ind[0, 0])
+                self.sigScatterRawInd.emit(ind[0, 0])
+            else:
+                row, col = self.selPx_ind2rc[ind[0, 0]]
+                raw_ind = self.rc2ind[(row, col)]
+                self.sigScatterClicked.emit(ind[0, 0])
+                self.sigScatterRawInd.emit(raw_ind)
 
     def clickFromImage(self, ind):
-        self.cross.setData([self.scatterData[ind, 0]], [self.scatterData[ind, 1]])
+        if self.selectedPixels is None:
+            self.cross.setData([self.scatterData[ind, 0]], [self.scatterData[ind, 1]])
+            self.sigScatterClicked.emit(ind)
+        elif self.ind2rc[ind] in self.selPx_rc2ind:
+            row, col = self.ind2rc[ind]
+            ind = self.selPx_rc2ind[(row, col)]
+            self.cross.setData([self.scatterData[ind, 0]], [self.scatterData[ind, 1]])
+            self.sigScatterClicked.emit(ind)
 
     def getNN(self):
         msg.showMessage('Training NearestNeighbors model in scatter plot.')
@@ -168,7 +195,7 @@ class ClusterSpectraWidget(SpectraPlotWidget):
 
     def setColors(self, colorLUT):
         self.colorLUT = colorLUT.copy()
-        self.colorLUT[0, :] = np.ones(3) * 255
+        # self.colorLUT[0, :] = np.ones(3) * 255
 
     def plotClusterSpectra(self):
         if self._data is not None:
@@ -179,8 +206,8 @@ class ClusterSpectraWidget(SpectraPlotWidget):
             self.plotItem.addLegend(offset=(1, 1))
             self.nSpectra = len(self._data)
             for i in range(self.nSpectra):
-                name = 'Cluster #' + str(i)
-                tmp = self.plot(self.wavenumbers, self._data[i], pen=mkPen(self.colorLUT[i], width=2), name=name)
+                name = 'Cluster #' + str(i + 1)
+                tmp = self.plot(self.wavenumbers, self._data[i], pen=mkPen(self.colorLUT[i + 1], width=2), name=name)
                 tmp.curve.setClickable(True)
                 tmp.curve.sigClicked.connect(partial(self.curveHighLight, i))
                 self._plots.append(tmp)
@@ -189,10 +216,10 @@ class ClusterSpectraWidget(SpectraPlotWidget):
     def curveHighLight(self, k):
         for i in range(self.nSpectra):
             if i == k:
-                self._plots[i].setPen(mkPen(self.colorLUT[k], width=6))
+                self._plots[i].setPen(mkPen(self.colorLUT[k + 1], width=6))
                 self._plots[i].setZValue(50)
             else:
-                self._plots[i].setPen(mkPen(self.colorLUT[i], width=2))
+                self._plots[i].setPen(mkPen(self.colorLUT[i + 1], width=2))
                 self._plots[i].setZValue(0)
         self._x, self._y = self._plots[k].getData()
         ymin, ymax = np.min(self._y), np.max(self._y)
@@ -228,7 +255,7 @@ class ClusteringWidget(QSplitter):
     def __init__(self, headermodel, selectionmodel):
         super(ClusteringWidget, self).__init__()
         self.headermodel = headermodel
-        self.mapselectmodel = selectionmodel
+        self.selectionmodel = selectionmodel
         # init some values
         self.selectMapidx = 0
         self.embedding = None
@@ -299,17 +326,33 @@ class ClusteringWidget(QSplitter):
         self.addWidget(self.rightsplitter)
         self.setSizes([500, 100])
 
+        # setup ROI item
+        sideLen = 10
+        self.roi = PolyLineROI(positions=[[0, 0], [sideLen, 0], [sideLen, sideLen], [0, sideLen]], closed=True)
+        self.roi.hide()
+        self.roiInitState = self.roi.getState()
+        # set up mask item
+        self.maskItem = ImageItem(np.ones((1, 1)), axisOrder="row-major", autoLevels=True, opacity=0.3)
+        self.maskItem.hide()
+        # set up select mask item
+        self.selectMaskItem = ImageItem(np.ones((1, 1)), axisOrder="row-major", autoLevels=True, opacity=0.3,
+                                        lut=np.array([[0, 0, 0], [255, 0, 0]]))
+        self.selectMaskItem.hide()
+        self.clusterImage.view.addItem(self.roi)
+        self.clusterImage.view.addItem(self.maskItem)
+        self.clusterImage.view.addItem(self.selectMaskItem)
+
         # Connect signals
         self.computeBtn.clicked.connect(self.computeEmbedding)
         self.saveBtn.clicked.connect(self.saveCluster)
         self.clusterImage.sigShowSpectra.connect(self.rawSpecPlot.showSpectra)
-        self.clusterImage.sigShowSpectra.connect(self.showClusterMean)
         self.clusterImage.sigShowSpectra.connect(self.clusterScatterPlot.clickFromImage)
-        self.clusterScatterPlot.sigScatterClicked.connect(self.rawSpecPlot.showSpectra)
+        self.clusterScatterPlot.sigScatterRawInd.connect(self.rawSpecPlot.showSpectra)
         self.clusterScatterPlot.sigScatterClicked.connect(self.showClusterMean)
-        self.clusterScatterPlot.sigScatterClicked.connect(self.setImageCross)
+        self.clusterScatterPlot.sigScatterRawInd.connect(self.setImageCross)
         self.parametertree.sigParamChanged.connect(self.updateClusterParams)
-        self.mapselectmodel.selectionChanged.connect(self.updateMap)
+        self.selectionmodel.selectionChanged.connect(self.updateMap)
+        self.selectionmodel.selectionChanged.connect(self.updateRoiMask)
 
     def computeEmbedding(self):
         # get current map idx
@@ -335,10 +378,17 @@ class ClusteringWidget(QSplitter):
         self.wavenumbers_select = self.wavenumbers[wavROIidx]
         self.N_w = len(self.wavenumbers_select)
         # get current dataset
-        n_spectra = len(self.data)
-        self.dataset = np.zeros((n_spectra, self.N_w))
-        for i in range(n_spectra):
-            self.dataset[i, :] = self.data[i][wavROIidx]
+        if self.selectedPixels is None:
+            n_spectra = len(self.data)
+            self.dataset = np.zeros((n_spectra, self.N_w))
+            for i in range(n_spectra):
+                self.dataset[i, :] = self.data[i][wavROIidx]
+        else:
+            n_spectra = len(self.selectedPixels)
+            self.dataset = np.zeros((n_spectra, self.N_w))
+            for i in range(n_spectra):  # i: ith selected pixel
+                row_col = tuple(self.selectedPixels[i])
+                self.dataset[i, :] = self.data[self.rc2ind[row_col]][wavROIidx]
         # get parameters and compute embedding
         n_components = self.parameter['Components']
         if self.parameter['Embedding'] == 'UMAP':
@@ -378,14 +428,20 @@ class ClusteringWidget(QSplitter):
         # get num of clusters
         n_clusters = self.parameter['Clusters']
         # set colorLUT
-        self.colorLUT = cm.get_cmap('viridis', n_clusters).colors[:, :3] * 255
+        self.colorLUT = cm.get_cmap('viridis', n_clusters + 1).colors[:, :3] * 255
         # compute cluster
         cluster_object = KMeans(n_clusters=n_clusters, random_state=0).fit(self.embedding)
-        self.labels = cluster_object.labels_
+        self.labels = cluster_object.labels_ + 1
         # update cluster image
-        self.cluster_map = self.labels.reshape(self.imgShape[0], self.imgShape[1])
+        if self.selectedPixels is None:  # full map
+            self.cluster_map = self.labels.reshape(self.imgShape[0], self.imgShape[1])
+        elif self.selectedPixels.size == 0:
+            self.cluster_map = np.zeros((self.imgShape[0], self.imgShape[1]), dtype=int)
+        else:
+            self.cluster_map = np.zeros((self.imgShape[0], self.imgShape[1]), dtype=int)
+            self.cluster_map[self.selectedPixels[:, 0], self.selectedPixels[:, 1]] = self.labels
         self.cluster_map = np.flipud(self.cluster_map)
-        self.clusterImage.setImage(self.cluster_map, levels=[0, n_clusters - 1])
+        self.clusterImage.setImage(self.cluster_map, levels=[0, n_clusters])
         # self.clusterImage.setImage(self.cluster_map)
         self.clusterImage._image = self.cluster_map
         self.clusterImage.rc2ind = self.rc2ind
@@ -395,16 +451,23 @@ class ClusteringWidget(QSplitter):
         # update cluster mean
         mean_spectra = []
         self.dfGroups = []
-        n_spectra = len(self.data)
-        self.dataList = np.zeros((n_spectra, len(self.wavenumbers)))
-        for i in range(n_spectra):
-            self.dataList[i] = self.data[i]
+        if self.selectedPixels is None:
+            n_spectra = len(self.data)
+            self.dataList = np.zeros((n_spectra, len(self.wavenumbers)))
+            for i in range(n_spectra):
+                self.dataList[i] = self.data[i]
+        else:
+            n_spectra = len(self.selectedPixels)
+            self.dataList = np.zeros((n_spectra, len(self.wavenumbers)))
+            for i in range(n_spectra):  # i: ith selected pixel
+                row_col = tuple(self.selectedPixels[i])
+                self.dataList[i, :] = self.data[self.rc2ind[row_col]]
 
-        for ii in range(n_clusters):
+        for ii in range(1, n_clusters + 1):
             sel = (self.labels == ii)
             # save each group spectra to a dataFrame
             self.dfGroups.append(pd.DataFrame(self.dataList[sel], columns=self.wavenumbers.tolist(),
-                                        index=np.arange(n_spectra)[sel]))
+                                              index=np.arange(n_spectra)[sel]))
             this_mean = np.mean(self.dataset[sel, :], axis=0)
             mean_spectra.append(this_mean)
         self.mean_spectra = np.vstack(mean_spectra)
@@ -428,7 +491,6 @@ class ClusteringWidget(QSplitter):
                 newFilePath = os.path.join(dirName, csvName)
                 self.dfGroups[i].to_csv(newFilePath)
             MsgBox(f'Cluster spectra groups were successfully saved at: {newFilePath}!')
-
 
     def updateScatterPlot(self):
         if (self.embedding is None) or (self.labels is None):
@@ -456,10 +518,10 @@ class ClusteringWidget(QSplitter):
 
     def updateMap(self):
         # get current map idx
-        if not self.mapselectmodel.selectedIndexes():  # no map is open
+        if not self.selectionmodel.selectedIndexes():  # no map is open
             return
         else:
-            self.selectMapidx = self.mapselectmodel.selectedIndexes()[0].row()
+            self.selectMapidx = self.selectionmodel.selectedIndexes()[0].row()
             # get current item
             self.item = self.headermodel.item(self.selectMapidx)
             if hasattr(self.item, 'embedding'):
@@ -473,7 +535,7 @@ class ClusteringWidget(QSplitter):
     def showClusterMean(self, i):
         if self.mean_spectra is None:
             return
-        self.clusterMeanPlot.curveHighLight(self.labels[i])
+        self.clusterMeanPlot.curveHighLight(self.labels[i] - 1)
 
     def setImageCross(self, ind):
         row, col = self.ind2rc[ind]
@@ -487,10 +549,17 @@ class ClusteringWidget(QSplitter):
                                                size=8))
 
     def cleanUp(self):
-        if hasattr(self, 'imgShape'):
-            self.clusterImage.clear()
-            # img = np.zeros((self.imgShape[0], self.imgShape[1]))
-            # self.clusterImage.setImage(img=img)
+        if self.selectionmodel.hasSelection():
+            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        elif self.headermodel.rowCount() > 0:
+            self.selectMapIdx = 0
+        else:
+            return
+
+        if hasattr(self, 'imgShapes') and (self.selectMapIdx < len(self.imgShapes)):
+            # self.clusterImage.clear()
+            img = np.zeros((self.imgShapes[self.selectMapIdx][0], self.imgShapes[self.selectMapIdx][1]))
+            self.clusterImage.setImage(img=img)
         if hasattr(self, 'scatterPlot'):
             self.clusterScatterPlot.plotItem.clearPlots()
             self.clusterScatterPlot.scatterData = None
@@ -498,6 +567,47 @@ class ClusteringWidget(QSplitter):
         self.rawSpecPlot._data = None
         self.clusterMeanPlot.clearAll()
         self.clusterMeanPlot._data = None
+
+    def updateRoiMask(self):
+        if self.selectionmodel.hasSelection():
+            self.selectMapIdx = self.selectionmodel.selectedIndexes()[0].row()
+        elif self.headermodel.rowCount() > 0:
+            self.selectMapIdx = 0
+        else:
+            return
+        # update roi
+        try:
+            roiState = self.headermodel.item(self.selectMapIdx).roiState
+            if roiState[0]:  # roi on
+                self.roi.show()
+            else:
+                self.roi.hide()
+            # update roi state
+            self.roi.blockSignals(True)
+            self.roi.setState(roiState[1])
+            self.roi.blockSignals(False)
+        except Exception:
+            self.roi.hide()
+        # update automask
+        try:
+            maskState = self.headermodel.item(self.selectMapIdx).maskState
+            self.maskItem.setImage(maskState[1])
+            if maskState[0]:  # automask on
+                self.maskItem.show()
+            else:
+                self.maskItem.hide()
+        except Exception:
+            pass
+        # update selectMask
+        try:
+            selectMaskState = self.headermodel.item(self.selectMapIdx).selectState
+            self.selectMaskItem.setImage(selectMaskState[1])
+            if selectMaskState[0]:  # selectmask on
+                self.selectMaskItem.show()
+            else:
+                self.selectMaskItem.hide()
+        except Exception:
+            pass
 
     def setHeader(self, field: str):
         self.headers = [self.headermodel.item(i).header for i in range(self.headermodel.rowCount())]
@@ -528,17 +638,25 @@ class ClusteringWidget(QSplitter):
         self.cleanUp()
 
     def isMapOpen(self):
-        if not self.mapselectmodel.selectedIndexes():  # no map is open
+        if not self.selectionmodel.selectedIndexes():  # no map is open
             return False
         else:
-            self.selectMapidx = self.mapselectmodel.selectedIndexes()[0].row()
+            self.selectMapidx = self.selectionmodel.selectedIndexes()[0].row()
             # get current data
             self.item = self.headermodel.item(self.selectMapidx)
+            self.selectedPixels = self.item.selectedPixels
+            self.clusterScatterPlot.selectedPixels = self.selectedPixels
             self.currentHeader = self.headers[self.selectMapidx]
             self.wavenumbers = self.wavenumberList[self.selectMapidx]
             self.rc2ind = self.rc2indList[self.selectMapidx]
             self.ind2rc = self.ind2rcList[self.selectMapidx]
+            self.clusterScatterPlot.ind2rc = self.ind2rc
+            self.clusterScatterPlot.rc2ind = self.rc2ind
             self.imgShape = self.imgShapes[self.selectMapidx]
             self.data = self.dataSets[self.selectMapidx]
             self.rawSpecPlot.setHeader(self.currentHeader, 'spectra')
+            if self.selectedPixels is not None:
+                self.clusterScatterPlot.selPx_rc2ind = {tuple(self.selectedPixels[i]): i for i in range(len(self.selectedPixels))}
+                self.clusterScatterPlot.selPx_ind2rc = {i: tuple(self.selectedPixels[i]) for i in range(len(self.selectedPixels))}
+
             return True

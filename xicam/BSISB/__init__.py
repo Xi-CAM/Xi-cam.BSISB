@@ -90,6 +90,7 @@ class BSISB(GUIPlugin):
         self.clusterwidget.setHeader(field='spectra')
         for i in range(4):
             self.FA_widget.roiList[i].sigRegionChangeFinished.connect(self.updateROI)
+        self.clusterwidget.roi.sigRegionChangeFinished.connect(self.updateROI)
 
     def appendSelection(self, sigCase, sigContent):
         # get current widget and append selectedPixels to item
@@ -99,12 +100,15 @@ class BSISB(GUIPlugin):
         elif sigCase == 'ROI':
             self.headermodel.item(currentItemIdx).roiState = sigContent
             self.FA_widget.updateRoiMask()
+            self.clusterwidget.updateRoiMask()
         elif sigCase == 'autoMask':
             self.headermodel.item(currentItemIdx).maskState = sigContent
             self.FA_widget.updateRoiMask()
+            self.clusterwidget.updateRoiMask()
         elif sigCase == 'select':
             self.headermodel.item(currentItemIdx).selectState = sigContent
             self.FA_widget.updateRoiMask()
+            self.clusterwidget.updateRoiMask()
 
     def updateROI(self, roi):
         if self.selectionmodel.hasSelection():
