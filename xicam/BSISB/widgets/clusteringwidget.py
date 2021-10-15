@@ -454,20 +454,23 @@ class ClusteringWidget(QSplitter):
         if self.selectedPixels is None:
             n_spectra = len(self.data)
             self.dataList = np.zeros((n_spectra, len(self.wavenumbers)))
+            dataIdx = np.arange(n_spectra)
             for i in range(n_spectra):
                 self.dataList[i] = self.data[i]
         else:
             n_spectra = len(self.selectedPixels)
             self.dataList = np.zeros((n_spectra, len(self.wavenumbers)))
+            dataIdx = np.zeros(n_spectra, dtype=int)
             for i in range(n_spectra):  # i: ith selected pixel
                 row_col = tuple(self.selectedPixels[i])
-                self.dataList[i, :] = self.data[self.rc2ind[row_col]]
+                dataIdx[i] = self.rc2ind[row_col]
+                self.dataList[i] = self.data[dataIdx[i]]
 
         for ii in range(1, n_clusters + 1):
             sel = (self.labels == ii)
             # save each group spectra to a dataFrame
             self.dfGroups.append(pd.DataFrame(self.dataList[sel], columns=self.wavenumbers.tolist(),
-                                              index=np.arange(n_spectra)[sel]))
+                                              index=dataIdx[sel]))
             this_mean = np.mean(self.dataset[sel, :], axis=0)
             mean_spectra.append(this_mean)
         self.mean_spectra = np.vstack(mean_spectra)
@@ -487,7 +490,7 @@ class ClusteringWidget(QSplitter):
             n_clusters = self.parameter['Clusters']
             for i in range(n_clusters):
                 # save dataFrames to csv file
-                csvName = oldFileName[:-3] + f'_cluster{i}.csv'
+                csvName = oldFileName[:-3] + f'_cluster{i+1}.csv'
                 newFilePath = os.path.join(dirName, csvName)
                 self.dfGroups[i].to_csv(newFilePath)
             MsgBox(f'Cluster spectra groups were successfully saved at: {newFilePath}!')
@@ -525,9 +528,8 @@ class ClusteringWidget(QSplitter):
             # get current item
             self.item = self.headermodel.item(self.selectMapidx)
             if hasattr(self.item, 'embedding'):
-                # load embedding
-                self.embedding = self.item.embedding
-                self.computeCluster()
+                # compute embedding
+                self.computeEmbedding()
             else:
                 # reset custer image and plots
                 self.cleanUp()
